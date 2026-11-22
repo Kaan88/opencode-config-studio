@@ -175,13 +175,13 @@ fn find_opencode() -> Option<PathBuf> {
     .find(|p| p.is_file())
 }
 
-#[tauri::command]
-async fn opencode_reload() -> Result<String, String> {
+// Runs opencode with fixed arguments (no window), up to 20 s; stdout on success.
+fn run_opencode(args: &'static [&'static str]) -> Result<String, String> {
     let exe = find_opencode().ok_or("OpenCode executable not found. Set OPENCODE_EXE to its full path.")?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut cmd = Command::new(&exe);
-        cmd.arg("reload");
+        cmd.args(args);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -189,15 +189,25 @@ async fn opencode_reload() -> Result<String, String> {
         }
         let _ = tx.send(cmd.output());
     });
+    let what = args.join(" ");
     match rx.recv_timeout(Duration::from_secs(20)) {
-        Ok(Ok(out)) if out.status.success() => {
-            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            Ok(if text.is_empty() { "Configuration reloaded".into() } else { text })
-        }
-        Ok(Ok(out)) => Err(format!("opencode reload failed: {}", String::from_utf8_lossy(&out.stderr).trim())),
+        Ok(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+        Ok(Ok(out)) => Err(format!("opencode {what} failed: {}", String::from_utf8_lossy(&out.stderr).trim())),
         Ok(Err(e)) => Err(format!("Could not run OpenCode: {e}")),
-        Err(_) => Err("opencode reload did not finish within 20 s.".into()),
+        Err(_) => Err(format!("opencode {what} did not finish within 20 s.")),
     }
+}
+
+#[tauri::command]
+async fn opencode_reload() -> Result<String, String> {
+    let text = tauri::async_runtime::spawn_blocking(|| run_opencode(&["reload"])).await.map_err(|e| e.to_string())??;
+    Ok(if text.is_empty() { "Configuration reloaded".into() } else { text })
+}
+
+// Every model OpenCode knows (cloud and local) with its effort variants: feeds the model pickers.
+#[tauri::command]
+async fn opencode_models() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| run_opencode(&["api", "model.list"])).await.map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize)]
@@ -325,7 +335,7 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![config_read, config_write, opencode_reload, http_get, schema_candidates, schema_cache_save, open_url])
+        .invoke_handler(tauri::generate_handler![config_read, config_write, opencode_reload, opencode_models, http_get, schema_candidates, schema_cache_save, open_url])
         .run(tauri::generate_context!())
         .expect("error while running OpenCode Config Studio");
 }

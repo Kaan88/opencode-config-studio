@@ -1,6 +1,6 @@
 [package]
 name = "opencode-config-studio"
-version = "2.0.0"
+version = "2.1.0"
 description = "Desktop editor for OpenCode's opencode.json"
 edition = "2021"
 

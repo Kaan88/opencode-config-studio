@@ -1,3 +1,198 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OpenCode Config Studio</title><style>
-:root{font-family:Segoe UI,system-ui,sans-serif;color:#e5eaf2;background:#101419;color-scheme:dark;--line:#303945;--muted:#9baabc;--accent:#b6e576}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:7px;background:#242d38;color:#e5eaf2;padding:9px 13px}button:hover{border-color:#81976e}button.primary{background:var(--accent);color:#17200d;border-color:var(--accent);font-weight:650}button.danger{color:#ffb7ad}button:disabled{opacity:.45;cursor:default}input,select,textarea{background:#10171e;color:#e5eaf2;border:1px solid #3b4857;border-radius:6px;padding:9px;max-width:100%;width:100%}input:focus,select:focus,textarea:focus{outline:2px solid #8ab755;outline-offset:1px}textarea{font:13px/1.6 Consolas,monospace;min-height:160px;resize:vertical}header{padding:22px 30px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:18px;background:#171e26;position:sticky;top:0;z-index:5}h1{font-size:20px;margin:0 0 5px}h2{font-size:27px;margin:0 0 8px}h3{font-size:18px;margin:0}p{line-height:1.6;color:var(--muted)}small,.muted{color:var(--muted);font-size:12px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.shell{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 92px)}aside{background:#151b22;padding:24px 16px;border-right:1px solid var(--line)}nav button{display:block;width:100%;text-align:left;margin-bottom:8px;background:transparent}.selected{background:#2b3841!important;border-color:#8daa6a!important}nav .provider{padding:14px 12px}nav .provider small{display:block;margin-top:6px;overflow-wrap:anywhere}.navlabel{font-size:11px;letter-spacing:1.5px;color:var(--muted);margin:22px 8px 12px;text-transform:uppercase}main{max-width:1200px;width:100%;padding:32px 38px}.card{border:1px solid var(--line);background:#1a222b;border-radius:12px;padding:22px;margin:20px 0}.cardhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.field{display:flex;flex-direction:column;gap:7px;margin:12px 0}.field>label{font-size:13px;color:#c9d3df}.row{display:flex;gap:8px;align-items:flex-start}.row>.grow{flex:1;min-width:0}.tiny{padding:6px 9px;font-size:12px}.badge{color:var(--accent);border:1px solid #526141;border-radius:20px;padding:3px 8px;font-size:11px}details{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:12px}summary{cursor:pointer;font-weight:600;font-size:14px;overflow-wrap:anywhere}.objectbody{padding:4px 4px 0 14px;border-left:1px solid #3b4957;margin-top:12px}.addrow{display:flex;gap:8px;margin:12px 0}.addrow select,.addrow input{flex:1}.notice{background:#212d23;border:1px solid #435c3d;padding:12px 16px;border-radius:8px;color:#cce1b8;line-height:1.6}.notice.error{background:#392723;border-color:#8b5044;color:#ffd1c6}#status{max-width:560px;font-size:12px;color:var(--accent)}#feedback:empty{display:none}#feedback{position:sticky;top:94px;z-index:4;white-space:pre-wrap;margin-bottom:18px}.modeltitle{overflow-wrap:anywhere;font-weight:600}.raw{min-height:65vh}.help{font-size:12px;line-height:1.55;color:var(--muted);margin:6px 0 14px}.pill{font-size:11px;color:var(--muted);margin-left:6px}dialog{background:#1a222b;color:#e5eaf2;border:1px solid #536171;border-radius:12px;max-width:620px;width:90%;padding:24px}dialog::backdrop{background:#0009}.full{grid-column:1/-1}a{color:var(--accent)}footer{margin:36px 0;color:var(--muted);font-size:12px}#dirty{font-size:12px;color:var(--accent)}.status{display:inline-block;margin:6px 0 0;font-size:12px}.status.up{color:var(--accent)}.status.down{color:#ffb7ad}h4{margin:18px 0 6px;font-size:13px;color:#c9d3df;text-transform:uppercase;letter-spacing:1px}.syncrow{margin:8px 0;align-items:center}.syncrow input{width:auto;flex:none;margin:0 4px 0 0}.syncrow span.grow{overflow-wrap:anywhere}.syncrow .pill{margin:0}dialog{max-height:86vh;overflow:auto}@media(max-width:850px){header{position:relative;flex-wrap:wrap;padding:18px}.shell{grid-template-columns:1fr}aside{border-right:0}nav{display:flex;flex-wrap:wrap;gap:6px}nav button{width:auto}main{padding:22px 18px}.grid{grid-template-columns:1fr}#feedback{top:8px}}
-</style></head><body><header><div><h1>◈ OpenCode <span style="color:#b6e576">Config Studio</span></h1><small>One configuration · CLI + Desktop</small></div><div class="toolbar"><span id="dirty"></span><button id="revert">Reload file</button><button id="validate">Validate</button><button id="save" class="primary">Save configuration</button><button id="reload">Reload OpenCode</button></div></header><div class="shell"><aside><div class="navlabel">Workspace</div><nav id="globalnav"></nav><div class="navlabel">Backends</div><nav id="providers"></nav><button id="newprovider" style="width:100%">＋ Add backend</button><div class="navlabel">Configuration file</div><small id="filepath" style="overflow-wrap:anywhere;display:block;padding:0 8px"></small><p class="help" style="padding:8px">Saves create timestamped backups beside your JSON. Existing fields and JSONC comments are preserved.</p></aside><main><div id="feedback" role="status" aria-live="polite"></div><div id="content"></div><footer><span id="schemasource">Schema: loading…</span> · <a id="docs" href="https://opencode.ai/v2/docs/models">Model settings reference ↗</a></footer></main></div><dialog id="modal"><h3 id="dialogtitle"></h3><div id="dialogbody"></div><div id="dialogactions" class="toolbar" style="justify-content:flex-end;margin-top:20px"></div></dialog><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenCode Config Studio</title>
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#ffffff;--panel2:#f1f3f6;--line:#dde2e8;--line2:#c9d0d9;--text:#1b2129;--muted:#5f6b7a;
+  --accent:#3f7d1f;--accent-bg:#e7f3dc;--accent-text:#ffffff;--danger:#b4372b;--danger-bg:#fbe9e7;--focus:#5a9e2f;
+  --up:#2f7d32;--down:#b4372b;--shadow:0 1px 2px rgba(20,30,40,.06),0 4px 16px rgba(20,30,40,.05);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1318;--panel:#171d24;--panel2:#1d252e;--line:#2a333e;--line2:#3a4552;--text:#e6ebf1;--muted:#97a3b2;
+  --accent:#b6e576;--accent-bg:#26331b;--accent-text:#16200c;--danger:#ff9e91;--danger-bg:#3a2420;--focus:#9fd35f;
+  --up:#9fd35f;--down:#ff9e91;--shadow:none;color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:14px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,h4{margin:0;line-height:1.25}
+h2{font-size:22px;font-weight:650}
+h3{font-size:15px;font-weight:650}
+h4{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 6px}
+p{margin:4px 0}
+.lead{color:var(--muted);max-width:70ch}
+.hint{color:var(--muted);font-size:12px}
+code{font:12px/1.4 Consolas,"Cascadia Mono",monospace;color:var(--muted);overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* buttons */
+button{cursor:pointer;border:1px solid var(--line2);background:var(--panel);border-radius:8px;padding:7px 14px;font-weight:500}
+button:hover{border-color:var(--focus)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text);font-weight:600}
+button.small{padding:4px 10px;font-size:13px}
+button.ghost{background:transparent;border-color:transparent}
+button.ghost:hover{border-color:var(--line2)}
+button.danger{color:var(--danger)}
+button.icon{padding:2px 8px;min-width:30px}
+button.linkish{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font-weight:600}
+kbd{font:11px Consolas,monospace;opacity:.75;margin-left:6px}
+
+/* inputs */
+input,select,textarea{background:var(--panel);border:1px solid var(--line2);border-radius:7px;padding:6px 9px;width:100%;min-width:0}
+input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--accent)}
+input[type=radio]{width:16px;height:16px}
+textarea{font:13px/1.55 Consolas,"Cascadia Mono",monospace;resize:vertical}
+input:invalid{border-color:var(--danger)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.field{display:flex;flex-direction:column;gap:4px;margin:6px 0}
+.field>label,.field>.label{font-size:12px;font-weight:600;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;margin:10px 0}
+
+/* switch */
+.switch{position:relative;display:inline-flex;width:36px;height:20px;flex:none;cursor:pointer}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.switch .track{width:100%;height:100%;border-radius:20px;background:var(--line2);transition:background .15s}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px #0003}
+.switch input:checked+.track{background:var(--accent)}
+.switch input:checked+.track::after{transform:translateX(16px);background:var(--panel)}
+.switch input:focus-visible+.track{outline:2px solid var(--focus);outline-offset:2px}
+.inline-toggle{display:inline-flex;align-items:center;gap:8px;font-weight:500}
+.inline-toggle .hint{margin-left:2px}
+
+/* shell */
+header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .logo{color:var(--accent);font-size:20px}
+.brand h1{font-size:15px;font-weight:650}
+.shell{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:0}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+.navitem{display:block;width:100%;text-align:left;border-color:transparent;background:transparent;padding:8px 12px;font-weight:550}
+.navitem.on{background:var(--accent-bg);border-color:transparent;color:var(--text)}
+.filebox{margin-top:auto;padding:12px 6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;font-size:12px}
+.filebox .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.filebox a{color:var(--accent)}
+main{overflow:auto;padding:24px 28px 96px;min-height:0}
+.page{max-width:1240px;margin:0 auto}
+button{white-space:nowrap}
+main:focus{outline:none}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:14px 0;box-shadow:var(--shadow)}
+.card.compact{padding:12px 18px}
+.card.empty{text-align:center;padding:28px}
+.card.empty button{margin-top:10px}
+.card.off{opacity:.7}
+.split{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.split .picker{min-width:min(460px,100%)}
+.backendhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.backendhead .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.actions,.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar{margin-top:10px}
+.status{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.status::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line2)}
+.status.up{color:var(--up)}.status.up::before{background:var(--up)}
+.status.down{color:var(--down)}.status.down::before{background:var(--down)}
+.picker{display:flex;gap:8px}
+.picker select:first-child{flex:1 1 auto}
+.picker .effort select{width:auto;min-width:140px}
+
+/* model table */
+.tablewrap{overflow-x:auto;margin:0 -6px}
+table.models{width:100%;border-collapse:collapse;min-width:820px}
+.models th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;text-align:left;padding:6px;border-bottom:1px solid var(--line)}
+.models td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.models th.c,.models td.c{text-align:center}
+.models td.name{min-width:220px}
+.models td.name input{font-weight:600;border-color:transparent;background:transparent;padding:4px 6px}
+.models td.name input:hover,.models td.name input:focus{border-color:var(--line2);background:var(--panel)}
+.models td.name .id{display:block;padding:0 7px;color:var(--muted);font:11px Consolas,monospace;overflow-wrap:anywhere}
+.models td .num{width:110px}
+.models td select{width:auto;min-width:96px}
+.models tr.off td{opacity:.55}
+.models tr.detail td{background:var(--panel2);padding:0}
+.detailbox{padding:12px 14px}
+.detailgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 16px}
+.detailgrid .wide{grid-column:1/-1}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:20px;padding:3px 12px;cursor:pointer;font-size:13px;user-select:none}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip.on{background:var(--accent-bg);border-color:var(--accent);font-weight:600}
+.chip:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:2px}
+.empty-row{color:var(--muted);margin:6px 0}
+.addmodel{display:flex;gap:8px;margin-top:12px;max-width:520px}
+
+/* agents */
+.agentgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:4px 16px}
+.agentgrid .field:last-child{grid-column:1/-1}
+.switches{display:flex;gap:24px;flex-wrap:wrap;margin:10px 0}
+details.inline{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:8px}
+details.inline textarea{margin-top:8px}
+summary{cursor:pointer;font-weight:600}
+
+/* advanced */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 14px}
+.tab.on{border-bottom-color:var(--accent);font-weight:650}
+.raw{min-height:65vh}
+.objectbody{padding:4px 0 0 14px;border-left:1px solid var(--line);margin-top:8px}
+.objectbody details{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0}
+.row{display:flex;gap:8px;align-items:flex-start}
+.row>.grow{flex:1;min-width:0}
+.addrow{display:flex;gap:8px;margin:10px 0}
+.addrow select{flex:1}
+
+/* notice, save bar, dialogs */
+#notice{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;max-width:min(720px,calc(100% - 32px));z-index:20;display:flex;gap:12px;align-items:flex-start;padding:10px 12px 10px 16px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);box-shadow:0 6px 24px #0003;white-space:pre-wrap}
+#notice:empty{display:none}
+#notice.ok{border-color:var(--accent)}
+#notice.error{border-color:var(--danger);background:var(--danger-bg)}
+#notice .close{padding:0 6px;margin-left:auto}
+.muted{color:var(--muted)}
+#savebar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:21;display:flex;align-items:center;gap:12px;padding:8px 8px 8px 18px;border-radius:12px;background:var(--panel);border:1px solid var(--accent);box-shadow:0 8px 28px #0004}
+#savebar[hidden]{display:none}
+#savebar .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:14px;width:min(520px,92vw);max-height:86vh;overflow:auto;padding:20px 22px;box-shadow:0 20px 60px #0005}
+dialog.wide{width:min(760px,94vw)}
+dialog::backdrop{background:#0008}
+#dialogtitle{font-size:17px;margin-bottom:10px}
+#dialogbody p{white-space:pre-wrap}
+#dialogactions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
+.preset{display:flex;gap:8px;align-items:center;border:1px solid var(--line2);border-radius:9px;padding:9px 12px;cursor:pointer}
+.preset:has(input:checked){border-color:var(--accent);background:var(--accent-bg);font-weight:600}
+.syncrow{display:flex;gap:10px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)}
+.syncrow .grow{flex:1;overflow-wrap:anywhere}
+
+@media (max-width:900px){.shell{grid-template-columns:1fr}aside{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.navitem{width:auto}.filebox{display:none}main{padding:16px}.agentgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true">◈</span><h1>OpenCode Config Studio</h1></div>
+  <div class="actions"><button id="reload" title="Apply the saved file to the running OpenCode service">Reload OpenCode</button></div>
+</header>
+<div class="shell">
+  <aside>
+    <nav id="nav" aria-label="Sections"></nav>
+    <div class="filebox">
+      <span class="label">Config file</span>
+      <code id="filepath"></code>
+      <span id="schemasource" class="hint"></span>
+      <a id="docs" href="https://opencode.ai/v2/docs/models">OpenCode model docs ↗</a>
+    </div>
+  </aside>
+  <main id="content" tabindex="-1"></main>
+</div>
+<div id="notice" role="status" aria-live="polite"></div>
+<div id="savebar" hidden><span class="dot" aria-hidden="true"></span><span>Unsaved changes</span><button id="discard" class="ghost">Discard</button><button id="save" class="primary">Save<kbd>Ctrl+S</kbd></button></div>
+<dialog id="modal" aria-labelledby="dialogtitle"><h3 id="dialogtitle"></h3><div id="dialogbody"></div><div id="dialogactions"></div></dialog>
+<script src="app.js"></script>
+</body>
+</html>
