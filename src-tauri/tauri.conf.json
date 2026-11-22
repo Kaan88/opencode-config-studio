@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenCode Config Studio",
+  "mainBinaryName": "OpenCodeConfigStudio",
+  "version": "2.0.0",
+  "identifier": "app.opencode-config-studio",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build:web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      { "title": "OpenCode Config Studio", "width": 1280, "height": 880, "minWidth": 760, "minHeight": 560 }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "opencode-config-studio",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "build": "cargo tauri build --no-bundle",
+    "dev": "cargo tauri dev",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "jsonc-parser": "^3.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
