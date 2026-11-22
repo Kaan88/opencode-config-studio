@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { decode, makeValidator, mergeText, normaliseListing, planSync, applySync } from "../src/core.js";
+import { decode, makeValidator, mergeText, normaliseListing, planSync, applySync, importCandidates, isFreeModel, isLocalUrl } from "../src/core.js";
 
 const schema = JSON.parse(readFileSync(new URL("../src/schema.json", import.meta.url)));
 const modelSchema = JSON.parse(readFileSync(new URL("../src/model-schema.json", import.meta.url)));
@@ -69,4 +69,27 @@ test("sync plan adds, updates and flags missing models, honouring modelID aliase
   assert.equal(models["gemma-vision"].limit.context, 131072);
   assert.equal(models.old, undefined);
   check({ providers: { lmstudio: { package: "@opencode/ai/providers/openai-compatible", settings: { baseURL: "http://127.0.0.1:1234/v1" }, models } } });
+});
+
+test("import candidates: no free models, newest version per line, local kept, names unique", () => {
+  assert.equal(isFreeModel({ providerID: "opencode", id: "big-pickle-free", cost: [{ input: 1 }] }), true);
+  assert.equal(isFreeModel({ providerID: "opencode", id: "x", cost: [{ input: 0, output: 0 }] }), true);
+  assert.equal(isFreeModel({ providerID: "openai", id: "x", cost: [] }), false); // subscription: $0 but not free
+  assert.equal(isLocalUrl("http://127.0.0.1:1234/v1"), true);
+  assert.equal(isLocalUrl("https://api.openai.com/v1"), false);
+  const models = [
+    { provider: "anthropic", id: "claude-opus-4-5-20251101" },
+    { provider: "anthropic", id: "claude-opus-5-5" },
+    { provider: "anthropic", id: "claude-sonnet-5-5" },
+    { provider: "opencode", id: "big-pickle-free", free: true },
+    { provider: "lmstudio", id: "qwen/qwen3.5-9b", local: true },
+    { provider: "lmstudio", id: "qwen/qwen3-4b", local: true },
+    { provider: "other", id: "claude-sonnet-5-5" },
+  ];
+  const c = importCandidates(models, { "claude-sonnet-5-5": { model: "anthropic/claude-sonnet-5-5#high" } });
+  assert.deepEqual(c.map((x) => x.ref), ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "lmstudio/qwen/qwen3-4b", "lmstudio/qwen/qwen3.5-9b", "other/claude-sonnet-5-5"]);
+  assert.deepEqual(c.map((x) => x.name), ["claude-opus-5-5", "claude-sonnet-5-5-2", "qwen3-4b", "qwen3.5-9b", "claude-sonnet-5-5-3"]);
+  assert.deepEqual(c.map((x) => x.exists), [false, true, false, false, false]);
+  const cfg = { agents: Object.fromEntries(c.map((x) => [x.name, { model: x.ref, mode: "all", description: `Runs ${x.label}` }])) };
+  check(cfg);
 });

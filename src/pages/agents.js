@@ -1,6 +1,6 @@
 // Agents page: the default agent, then one card per agent defined in the config.
-import { isReadOnly, setPath, setReadOnly } from "../core.js";
-import { button, confirmDialog, dialog, el, field, select, textInput, toggle } from "../dom.js";
+import { importCandidates, isLocalUrl, isReadOnly, setPath, setReadOnly } from "../core.js";
+import { act, button, confirmDialog, dialog, el, field, notice, select, textInput, toggle } from "../dom.js";
 import { modelPicker } from "../pickers.js";
 import { boundEditor, resolve } from "../schemaEditor.js";
 import { mark, render, S } from "../state.js";
@@ -9,7 +9,7 @@ const BUILT_IN = ["build", "plan", "general", "explore"];
 const MODES = [
   { value: "subagent", label: "Subagent (called by other agents)" },
   { value: "primary", label: "Primary (pick it in the UI)" },
-  { value: "all", label: "Both" },
+  { value: "all", label: "Both (pick it, or let agents call it)" },
 ];
 const agents = () => (S.config.agents ??= {});
 
@@ -17,11 +17,11 @@ export function agentsPage(root) {
   const names = [...new Set([...BUILT_IN, ...Object.keys(S.config.agents || {})])];
   if (S.config.default_agent && !names.includes(S.config.default_agent)) names.push(S.config.default_agent);
   root.append(
-    el("div", { class: "pagehead" }, el("div", {}, el("h2", { text: "Agents" }), el("p", { class: "lead", text: "Agents pair a model with instructions and permissions. Built-in agents (build, plan, general, explore) can be overridden here too." })), button("+ New agent", newAgentDialog, "primary")),
+    el("div", { class: "pagehead" }, el("div", {}, el("h2", { text: "Agents" }), el("p", { class: "lead", text: "Agents pair a model with instructions and permissions. Built-in agents (build, plan, general, explore) can be overridden here too." })), el("div", { class: "actions" }, button("Import from OpenCode…", () => act(importDialog)), button("+ New agent", newAgentDialog, "primary"))),
     el("section", { class: "card compact" }, el("div", { class: "split" }, el("div", {}, el("h3", { text: "Default agent" }), el("p", { class: "hint", text: "The agent new sessions start with." })), select([{ value: "", label: "OpenCode default (build)" }, ...names.map((n) => ({ value: n, label: n }))], S.config.default_agent || "", (v) => (setPath(S.config, ["default_agent"], v || undefined), mark()), "Default agent"))),
   );
   const list = Object.entries(S.config.agents || {});
-  if (!list.length) root.append(el("section", { class: "card empty" }, el("h3", { text: "No agents defined" }), el("p", { text: "Create one to run a specific model, for example a read-only reviewer on a local model." }), button("+ New agent", newAgentDialog, "primary")));
+  if (!list.length) root.append(el("section", { class: "card empty" }, el("h3", { text: "No agents defined" }), el("p", { text: "Create one to run a specific model, for example a read-only reviewer on a local model, or import one agent per model OpenCode offers." }), el("div", { class: "actions" }, button("Import from OpenCode…", () => act(importDialog)), button("+ New agent", newAgentDialog, "primary"))));
   for (const [name, a] of list) root.append(agentCard(name, a));
 }
 
@@ -82,6 +82,52 @@ function newAgentDialog() {
       agents()[n] = a;
       mark();
       render();
+    } },
+  ], { wide: true });
+}
+
+// Every model OpenCode lists (plus unsaved models from this file), as one agent each. Free models and older
+// versions of a model line are left out; models an agent already runs on start unticked.
+function importDialog() {
+  const models = S.catalog.map((m) => ({ ...m }));
+  const known = new Set(models.map((m) => `${m.provider}/${m.id}`));
+  for (const [pid, p] of Object.entries(S.config.providers || {}))
+    for (const [mid, m] of Object.entries(p.models || {}))
+      if (!m.disabled && !known.has(`${pid}/${mid}`)) models.push({ provider: pid, id: mid, name: m.name || mid, local: isLocalUrl(p.settings?.baseURL) });
+  const list = importCandidates(models, S.config.agents || {});
+  if (!list.length) throw Error(S.catalogError ? `Couldn't read OpenCode's model list (${S.catalogError}).` : "OpenCode lists no models besides free ones.");
+
+  let mode = "all";
+  const rows = list.map((c) => {
+    const box = el("input", { type: "checkbox", checked: !c.exists, "aria-label": `Import ${c.ref}` });
+    const name = el("input", { value: c.name, "aria-label": `Agent name for ${c.ref}`, class: "importname" });
+    return { c, box, name, row: el("label", { class: "syncrow" }, box, el("span", { class: "grow" }, c.label, " ", el("small", { class: "hint", text: c.id })), c.exists ? el("span", { class: "status", text: "has an agent" }) : null, c.local ? el("span", { class: "status up", text: "local" }) : null, name) };
+  });
+  const groups = [];
+  for (const r of rows) {
+    if (groups.at(-1)?.provider !== r.c.provider) groups.push({ provider: r.c.provider, rows: [] });
+    groups.at(-1).rows.push(r);
+  }
+  const all = (on) => rows.forEach((r) => (r.box.checked = on));
+  dialog("Import agents from OpenCode", [
+    el("p", { text: `${rows.length} models, newest version of each, OpenCode's free models left out. Each ticked model becomes an agent on that model with its default effort; change the name on the right if you like.` }),
+    el("div", { class: "split" }, field("Mode for all", select(MODES, mode, (v) => (mode = v), "Mode for imported agents"), "Both lets you pick them and lets Claude and other agents run them."), el("div", { class: "actions" }, button("Select all", () => all(true), "small"), button("Select none", () => all(false), "small"))),
+    ...groups.flatMap((g) => [el("h4", { text: g.provider }), ...g.rows.map((r) => r.row)]),
+  ], [
+    { label: "Cancel" },
+    { label: "Import", kind: "primary", run: () => {
+      const picked = rows.filter((r) => r.box.checked);
+      const names = new Set();
+      for (const r of picked) {
+        const n = r.name.value.trim();
+        if (!/^[A-Za-z0-9][\w.-]*$/.test(n)) throw Error(`"${n}" isn't a valid agent name: use letters, numbers, dots, dashes or underscores.`);
+        if (agents()[n] || BUILT_IN.includes(n) || names.has(n)) throw Error(`The name "${n}" is already used.`);
+        names.add(n);
+      }
+      for (const r of picked) agents()[r.name.value.trim()] = { model: r.c.ref, mode, description: r.c.label.toLowerCase().includes(r.c.provider.toLowerCase()) ? `Runs ${r.c.label}.` : `Runs ${r.c.label} (${r.c.provider}).` };
+      if (picked.length) mark();
+      render();
+      notice(picked.length ? `${picked.length} agent${picked.length > 1 ? "s" : ""} added. Save, then Reload OpenCode to use them.` : "Nothing selected.", "ok");
     } },
   ], { wide: true });
 }

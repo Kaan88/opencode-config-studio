@@ -25,6 +25,9 @@ Three pages; everyday edits are plain switches and fields, no JSON.
 - **Agents.** The default agent, then each agent: model and effort (from every model OpenCode knows, read live), mode,
   description, enabled, read-only (denies edits, shell and subagents), hidden, instructions; permissions and every other
   field behind "Permissions & all fields".
+  - **Import from OpenCode** makes one agent per model OpenCode lists (and unsaved models in this file): OpenCode's
+    free models and older versions of a model line are left out, local models are all offered, and models an agent
+    already runs on start unticked. Pick a mode for all of them and edit any name before importing.
 - **Advanced.** Every other setting through a form generated from OpenCode's schema, and the raw JSON.
 - **Reload OpenCode** runs `opencode reload` so the running service picks up the saved file.
 

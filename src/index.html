@@ -163,12 +163,13 @@ dialog.wide{width:min(760px,94vw)}
 dialog::backdrop{background:#0008}
 #dialogtitle{font-size:17px;margin-bottom:10px}
 #dialogbody p{white-space:pre-wrap}
-#dialogactions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+#dialogactions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;position:sticky;bottom:-20px;background:var(--panel);padding:12px 0 20px;margin-bottom:-20px;border-top:1px solid var(--line)}
 .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
 .preset{display:flex;gap:8px;align-items:center;border:1px solid var(--line2);border-radius:9px;padding:9px 12px;cursor:pointer}
 .preset:has(input:checked){border-color:var(--accent);background:var(--accent-bg);font-weight:600}
 .syncrow{display:flex;gap:10px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)}
 .syncrow .grow{flex:1;overflow-wrap:anywhere}
+.syncrow .importname{width:190px;flex:none}
 
 @media (max-width:900px){.shell{grid-template-columns:1fr}aside{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.navitem{width:auto}.filebox{display:none}main{padding:16px}.agentgrid{grid-template-columns:1fr}}
 </style>

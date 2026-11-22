@@ -230,3 +230,66 @@ export function setReadOnly(a, on) {
   if (!a.permissions.length) delete a.permissions;
   return a;
 }
+
+// ---- importing OpenCode's models as agents ----
+
+// OpenCode's own free models: the "opencode" provider with a "-free" id or no cost. Subscription and local
+// providers also report $0, so zero cost alone doesn't count.
+export const isFreeModel = (m) => m.providerID === "opencode" && (/-free$/i.test(m.id) || (m.cost || []).every((c) => !c.input && !c.output));
+const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|[^.]+$|.*\.local$)/i;
+export function isLocalUrl(url) {
+  try {
+    return LOCAL_HOST.test(new URL(url || "").hostname);
+  } catch {
+    return false;
+  }
+}
+
+// "claude-opus-4-5-20251101" -> line "claude-opus", version [4,5], date 20251101
+function lineOf(m) {
+  const line = [], version = [];
+  let date = 0;
+  for (const t of m.id.split(/[-/]/)) {
+    if (/^\d{8}$/.test(t)) date = Number(t);
+    else if (/^v?\d+(\.\d+)*$/i.test(t)) version.push(...t.replace(/^v/i, "").split(".").map(Number));
+    else line.push(t);
+  }
+  return { key: `${m.provider}/${line.join("-")}`, version, date };
+}
+function newer(a, b) {
+  for (let i = 0; i < Math.max(a.version.length, b.version.length); i++) {
+    const d = (a.version[i] || 0) - (b.version[i] || 0);
+    if (d) return d > 0;
+  }
+  return a.version.length !== b.version.length ? a.version.length > b.version.length : !a.date && !!b.date;
+}
+// Only the newest version of each model line; local models are all kept (they're whatever is loaded).
+export function latestOnly(models) {
+  const best = new Map();
+  for (const m of models) {
+    if (m.local) continue;
+    const l = lineOf(m);
+    const cur = best.get(l.key);
+    if (!cur || newer(l, cur.l)) best.set(l.key, { m, l });
+  }
+  const keep = new Set([...best.values()].map((b) => b.m));
+  return models.filter((m) => m.local || keep.has(m));
+}
+
+// An agent name from a model id: "qwen/qwen3.5-9b" -> "qwen3.5-9b", "GPT 5" -> "gpt-5"
+export const agentNameFor = (id) => id.split("/").pop().toLowerCase().replace(/[^\w.-]+/g, "-").replace(/^[^a-z0-9]+|-+$/g, "") || "model";
+
+// Candidates for "Import from OpenCode": [{ ref, provider, id, label, name, local, exists }], newest versions only,
+// free models left out. `exists` marks models some agent already runs on (those start unticked).
+export function importCandidates(models, agents = {}) {
+  const used = new Set(Object.values(agents).map((a) => parseRef(a.model)).filter((r) => r.provider).map((r) => `${r.provider}/${r.model}`));
+  const taken = { build: 1, plan: 1, general: 1, explore: 1, ...agents }; // never shadow a built-in by accident
+  return latestOnly(models.filter((m) => !m.free))
+    .sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
+    .map((m) => {
+      const ref = `${m.provider}/${m.id}`;
+      const name = freeId(agentNameFor(m.id), taken);
+      taken[name] = true;
+      return { ref, provider: m.provider, id: m.id, label: m.name || m.id, name, local: !!m.local, exists: used.has(ref) };
+    });
+}

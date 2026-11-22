@@ -1,5 +1,5 @@
 // App state: the draft config, file revision, schema, OpenCode's live model catalog, and save/load.
-import { decode, makeValidator, mergeText } from "./core.js";
+import { decode, isFreeModel, isLocalUrl, makeValidator, mergeText } from "./core.js";
 
 export const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
@@ -99,7 +99,7 @@ export async function loadCatalog() {
     const rows = Array.isArray(j) ? j : j.data || [];
     S.catalog = rows
       .filter((m) => m.enabled !== false && (!m.type || m.type === "chat"))
-      .map((m) => ({ provider: m.providerID, id: m.id, name: m.name || m.id, variants: (m.variants || []).map((v) => v.id) }));
+      .map((m) => ({ provider: m.providerID, id: m.id, name: m.name || m.id, variants: (m.variants || []).map((v) => v.id), free: isFreeModel(m), local: isLocalUrl(m.settings?.baseURL) }));
     S.catalogError = "";
   } catch (e) {
     S.catalog = [];
