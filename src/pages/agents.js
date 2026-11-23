@@ -1,5 +1,5 @@
 // Agents page: the default agent, then one card per agent defined in the config.
-import { importCandidates, isLocalUrl, isReadOnly, setPath, setReadOnly } from "../core.js";
+import { EDIT_POLICIES, editPolicy, importCandidates, isLocalUrl, setEditPolicy, setPath } from "../core.js";
 import { act, button, confirmDialog, dialog, el, field, notice, select, textInput, toggle } from "../dom.js";
 import { modelPicker } from "../pickers.js";
 import { boundEditor, resolve } from "../schemaEditor.js";
@@ -47,9 +47,9 @@ function agentCard(name, a) {
       field("Model", modelPicker(a.model, (v) => (setPath(a, ["model"], v || undefined), mark()), { label: `Model for ${name}`, emptyLabel: "OpenCode default model" })),
       field("Mode", select(MODES, a.mode || "all", (v) => (setPath(a, ["mode"], v), mark()), `Mode for ${name}`)),
       field("Description", textInput(a.description, (v) => (setPath(a, ["description"], v || undefined), mark()), `Description for ${name}`, { placeholder: "When to use this agent" }), "Shown to other agents deciding whether to call it."),
+      field("Edits & shell commands", select(EDIT_POLICIES, editPolicy(a), (v) => (setEditPolicy(a, v), mark(), render()), `Edits and shell commands for ${name}`), "Ask first lets Claude run it for read-only jobs and, when it allows edits, for edit jobs."),
     ),
     el("div", { class: "switches" },
-      el("label", { class: "inline-toggle" }, toggle(isReadOnly(a), (v) => (setReadOnly(a, v), mark(), render()), `${name} read-only`), "Read-only", el("small", { class: "hint", text: "no edits, no shell, no subagents" })),
       el("label", { class: "inline-toggle" }, toggle(!!a.hidden, (v) => (setPath(a, ["hidden"], v || undefined), mark(), render()), `${name} hidden`), "Hidden", el("small", { class: "hint", text: "not listed in the agent picker" })),
     ),
     instructions,
@@ -61,14 +61,14 @@ function newAgentDialog() {
   const name = el("input", { placeholder: "e.g. local-reviewer" });
   let model = "";
   let mode = "subagent";
-  const ro = el("input", { type: "checkbox" });
+  let policy = "ask";
   const desc = el("input", { placeholder: "When to use this agent" });
   dialog("New agent", [
     field("Name", name),
     field("Model", modelPicker("", (v) => (model = v), { label: "Model", emptyLabel: "OpenCode default model" })),
     field("Mode", select(MODES, mode, (v) => (mode = v), "Mode")),
     field("Description", desc),
-    el("label", { class: "check" }, ro, "Read-only (no edits, no shell, no subagents)"),
+    field("Edits & shell commands", select(EDIT_POLICIES, policy, (v) => (policy = v), "Edits and shell commands")),
   ], [
     { label: "Cancel" },
     { label: "Create", kind: "primary", run: () => {
@@ -78,7 +78,7 @@ function newAgentDialog() {
       const a = { mode };
       if (model) a.model = model;
       if (desc.value.trim()) a.description = desc.value.trim();
-      if (ro.checked) setReadOnly(a, true);
+      setEditPolicy(a, policy);
       agents()[n] = a;
       mark();
       render();
@@ -98,6 +98,7 @@ function importDialog() {
   if (!list.length) throw Error(S.catalogError ? `Couldn't read OpenCode's model list (${S.catalogError}).` : "OpenCode lists no models besides free ones.");
 
   let mode = "all";
+  let policy = "ask";
   const rows = list.map((c) => {
     const box = el("input", { type: "checkbox", checked: !c.exists, "aria-label": `Import ${c.ref}` });
     const name = el("input", { value: c.name, "aria-label": `Agent name for ${c.ref}`, class: "importname" });
@@ -111,7 +112,8 @@ function importDialog() {
   const all = (on) => rows.forEach((r) => (r.box.checked = on));
   dialog("Import agents from OpenCode", [
     el("p", { text: `${rows.length} models, newest version of each, OpenCode's free models left out. Each ticked model becomes an agent on that model with its default effort; change the name on the right if you like.` }),
-    el("div", { class: "split" }, field("Mode for all", select(MODES, mode, (v) => (mode = v), "Mode for imported agents"), "Both lets you pick them and lets Claude and other agents run them."), el("div", { class: "actions" }, button("Select all", () => all(true), "small"), button("Select none", () => all(false), "small"))),
+    el("div", { class: "agentgrid" }, field("Mode for all", select(MODES, mode, (v) => (mode = v), "Mode for imported agents"), "Both: pick them in OpenCode, and let Claude and other agents run them."), field("Edits & shell for all", select(EDIT_POLICIES, policy, (v) => (policy = v), "Edits and shell commands for imported agents"), "Ask first lets Claude run them read-only too.")),
+    el("div", { class: "toolbar" }, el("div", { class: "actions" }, button("Select all", () => all(true), "small"), button("Select none", () => all(false), "small"))),
     ...groups.flatMap((g) => [el("h4", { text: g.provider }), ...g.rows.map((r) => r.row)]),
   ], [
     { label: "Cancel" },
@@ -124,7 +126,7 @@ function importDialog() {
         if (agents()[n] || BUILT_IN.includes(n) || names.has(n)) throw Error(`The name "${n}" is already used.`);
         names.add(n);
       }
-      for (const r of picked) agents()[r.name.value.trim()] = { model: r.c.ref, mode, description: r.c.label.toLowerCase().includes(r.c.provider.toLowerCase()) ? `Runs ${r.c.label}.` : `Runs ${r.c.label} (${r.c.provider}).` };
+      for (const r of picked) agents()[r.name.value.trim()] = setEditPolicy({ model: r.c.ref, mode, description: r.c.label.toLowerCase().includes(r.c.provider.toLowerCase()) ? `Runs ${r.c.label}.` : `Runs ${r.c.label} (${r.c.provider}).` }, policy);
       if (picked.length) mark();
       render();
       notice(picked.length ? `${picked.length} agent${picked.length > 1 ? "s" : ""} added. Save, then Reload OpenCode to use them.` : "Nothing selected.", "ok");

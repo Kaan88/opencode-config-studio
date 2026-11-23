@@ -83,6 +83,10 @@
       "type": "string",
       "description": "IANA time zone for schedules, e.g. America/Los_Angeles. Defaults to the server's local zone"
     },
+    "automations": {
+      "type": "boolean",
+      "description": "Run prompts, shell commands or Code Mode actions on a timer, on a cron schedule, or on push events from connected MCP servers. Defaults to true; set false to disable."
+    },
     "permissions": {
       "$ref": "#/$defs/Permission.Ruleset",
       "description": "Ordered tool permission rules applied to agent tool use"
@@ -101,7 +105,8 @@
               "integration.use",
               "mcp.use",
               "skill.use",
-              "plugin.use"
+              "plugin.use",
+              "websearch.use"
             ]
           },
           "resource": {
@@ -319,6 +324,9 @@
           "type": "boolean",
           "description": "Enable automatic compaction when context is full (default: true)"
         },
+        "background": {
+          "type": "boolean"
+        },
         "keep": {
           "type": "object",
           "properties": {
@@ -493,13 +501,86 @@
         "portable_shell_scanner": {
           "type": "boolean"
         },
+        "codemode_vm": {
+          "type": "boolean"
+        },
+        "all_flags": {
+          "type": "boolean"
+        },
         "todo": {
           "type": "boolean"
         },
-        "background_compaction": {
+        "media_blob": {
           "type": "boolean"
         },
-        "media_blob": {
+        "artifacts": {
+          "type": "boolean"
+        },
+        "video_generate": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[^/#]+\\/[^#]+(?:#[^#]+)?$"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "providerID": {
+                          "type": "string",
+                          "pattern": "^[^/#]+$"
+                        },
+                        "model": {
+                          "type": "string",
+                          "pattern": "^[^#]+$"
+                        },
+                        "variant": {
+                          "type": "string",
+                          "pattern": "^[^#]+$"
+                        }
+                      },
+                      "required": [
+                        "providerID",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "console_watches": {
+          "type": "boolean"
+        },
+        "recommended_api": {
+          "type": "boolean"
+        },
+        "full_codemode": {
+          "type": "boolean"
+        },
+        "machines": {
+          "type": "boolean"
+        },
+        "home_memory": {
+          "type": "boolean"
+        },
+        "project_overlay": {
+          "type": "boolean"
+        },
+        "sqlite_fts": {
+          "type": "boolean"
+        },
+        "part_rows": {
           "type": "boolean"
         },
         "image_generate": {
@@ -545,12 +626,6 @@
             }
           ]
         },
-        "schedules": {
-          "type": "boolean"
-        },
-        "artifacts": {
-          "type": "boolean"
-        },
         "subagent_depth": {
           "type": "integer",
           "minimum": 0,
@@ -583,7 +658,8 @@
                   "integration.use",
                   "mcp.use",
                   "skill.use",
-                  "plugin.use"
+                  "plugin.use",
+                  "websearch.use"
                 ]
               },
               "resource": {
@@ -1827,7 +1903,7 @@
         "auto",
         "2026-07-28"
       ],
-      "description": "MCP protocol negotiation. \"legacy\" (default) opens with the initialize handshake and speaks protocol revisions up to 2025-11-25. \"auto\" probes for the 2026-07-28 revision and falls back to legacy when the server does not support it. \"2026-07-28\" requires that revision and fails otherwise."
+      "description": "MCP protocol negotiation. \"auto\" (default) probes for the 2026-07-28 revision and falls back to legacy when the server does not support it. \"legacy\" opens with the initialize handshake and speaks protocol revisions up to 2025-11-25. \"2026-07-28\" requires that revision and fails otherwise."
     },
     "Mcp.LocalConfigEncoded": {
       "type": "object",
@@ -1882,6 +1958,9 @@
         },
         "protocol": {
           "$ref": "#/$defs/Mcp.Protocol"
+        },
+        "pool": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1976,6 +2055,9 @@
         },
         "protocol": {
           "$ref": "#/$defs/Mcp.Protocol"
+        },
+        "pool": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2327,6 +2409,27 @@
         "none"
       ]
     },
+    "Provider.Tls": {
+      "type": "object",
+      "properties": {
+        "cert": {
+          "type": "string",
+          "description": "PEM client certificate, usually `{file:/path/to/client.pem}`"
+        },
+        "key": {
+          "type": "string",
+          "description": "PEM private key, usually `{file:/path/to/client.key}`"
+        },
+        "passphrase": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cert",
+        "key"
+      ],
+      "additionalProperties": false
+    },
     "Config.Provider.Settings": {
       "type": "object",
       "properties": {
@@ -2380,6 +2483,9 @@
         },
         "encoding": {
           "$ref": "#/$defs/Provider.Encoding"
+        },
+        "tls": {
+          "$ref": "#/$defs/Provider.Tls"
         }
       },
       "allOf": [
@@ -2403,7 +2509,8 @@
           "enum": [
             "chat",
             "decision",
-            "image"
+            "image",
+            "video"
           ]
         },
         {
@@ -2477,6 +2584,14 @@
         }
       ]
     },
+    "Tool.FreeformFormat": {
+      "type": "string",
+      "enum": [
+        "text",
+        "regex",
+        "lark"
+      ]
+    },
     "Config.Model.Reasoning": {
       "anyOf": [
         {
@@ -2541,6 +2656,12 @@
       "properties": {
         "tools": {
           "type": "boolean"
+        },
+        "freeform": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Tool.FreeformFormat"
+          }
         },
         "input": {
           "type": "array",

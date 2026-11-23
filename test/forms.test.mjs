@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly } from "../src/core.js";
+import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly, editPolicy, setEditPolicy } from "../src/core.js";
 
 const check = makeValidator(JSON.parse(readFileSync(new URL("../src/schema.json", import.meta.url))), JSON.parse(readFileSync(new URL("../src/model-schema.json", import.meta.url))));
 const wrap = (m) => ({ providers: { p: { ...newBackend({ name: "P", url: "http://127.0.0.1:1/v1" }), models: { m } } } });
@@ -57,4 +57,21 @@ test("model refs, ids, local twin and read-only agents", () => {
   setReadOnly(a, false);
   assert.deepEqual(a.permissions, [{ action: "skill", resource: "x", effect: "allow" }]);
   check({ agents: { ro: setReadOnly({ model: "a/b", mode: "subagent" }, true) } });
+});
+
+test("edit policy: allow, ask, deny; own rules kept after the managed ones", () => {
+  const a = { model: "a/b", permissions: [{ action: "shell", resource: "git status*", effect: "allow" }, { action: "subagent", resource: "*", effect: "deny" }] };
+  assert.equal(editPolicy(a), "allow");
+  setEditPolicy(a, "ask");
+  assert.equal(editPolicy(a), "ask");
+  assert.deepEqual(a.permissions.slice(0, 2).map((r) => `${r.action}:${r.effect}`), ["edit:ask", "shell:ask"]);
+  assert.ok(a.permissions.some((r) => r.resource === "git status*")); // later, so it still wins over shell:ask
+  assert.ok(a.permissions.some((r) => r.action === "subagent")); // the agent's own rule stays
+  setEditPolicy(a, "deny");
+  assert.ok(isReadOnly(a));
+  setEditPolicy(a, "ask");
+  assert.equal(a.permissions.filter((r) => r.action === "subagent").length, 0); // read-only's subagent rule goes with it
+  setEditPolicy(a, "allow");
+  assert.equal(editPolicy(a), "allow");
+  check({ agents: { x: setEditPolicy({ model: "a/b" }, "ask") } });
 });

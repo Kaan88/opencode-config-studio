@@ -217,19 +217,43 @@ export function localTwin(url) {
   }
 }
 
-// Read-only agents deny edits, shell and subagents (OpenCode permissions).
-const READ_ONLY_RULES = [
-  { action: "edit", resource: "*", effect: "deny" },
-  { action: "shell", resource: "*", effect: "deny" },
-  { action: "subagent", resource: "*", effect: "deny" },
+// What an agent may do to files and the shell (OpenCode permissions; the last matching rule wins, so these go first):
+//   allow - anything (OpenCode's default)
+//   ask   - edits and shell commands ask first. In OpenCode's UI you approve them; Claude's bridge runs read-only jobs
+//           without auto-approve (every ask is rejected) and edit jobs with it, so one agent serves both.
+//   deny  - read-only: no edits, no shell, no subagents.
+const POLICY_RULES = {
+  allow: [],
+  ask: [
+    { action: "edit", resource: "*", effect: "ask" },
+    { action: "shell", resource: "*", effect: "ask" },
+  ],
+  deny: [
+    { action: "edit", resource: "*", effect: "deny" },
+    { action: "shell", resource: "*", effect: "deny" },
+    { action: "subagent", resource: "*", effect: "deny" },
+  ],
+};
+export const EDIT_POLICIES = [
+  { value: "allow", label: "Allowed" },
+  { value: "ask", label: "Ask first (Claude can still run it read-only)" },
+  { value: "deny", label: "Blocked (read-only)" },
 ];
-export const isReadOnly = (a) => ["edit", "shell"].every((act) => (a.permissions || []).some((r) => r.action === act && r.resource === "*" && r.effect === "deny"));
-export function setReadOnly(a, on) {
-  const rules = (a.permissions || []).filter((r) => !READ_ONLY_RULES.some((x) => x.action === r.action && x.resource === r.resource && x.effect === r.effect));
-  a.permissions = on ? [...READ_ONLY_RULES, ...rules] : rules;
+export function editPolicy(a) {
+  const last = (a?.permissions || []).filter((r) => r.action === "edit" && r.resource === "*").at(-1);
+  return last ? last.effect : "allow";
+}
+export function setEditPolicy(a, policy) {
+  const was = editPolicy(a);
+  const rules = (a.permissions || []).filter(
+    (r) => !(r.resource === "*" && (r.action === "edit" || r.action === "shell" || (was === "deny" && r.action === "subagent" && r.effect === "deny"))),
+  );
+  a.permissions = [...POLICY_RULES[policy], ...rules];
   if (!a.permissions.length) delete a.permissions;
   return a;
 }
+export const isReadOnly = (a) => editPolicy(a) === "deny";
+export const setReadOnly = (a, on) => setEditPolicy(a, on ? "deny" : "allow");
 
 // ---- importing OpenCode's models as agents ----
 
