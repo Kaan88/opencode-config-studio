@@ -44,6 +44,19 @@ fn config_path() -> PathBuf {
     }
 }
 
+// The Claude workers file read by the OpenCode bridge: CLAUDE_WORKERS_FILE, else ~/.claude/claude-workers.json.
+fn workers_path() -> PathBuf {
+    std::env::var_os("CLAUDE_WORKERS_FILE").map(PathBuf::from).unwrap_or_else(|| home().join(".claude").join("claude-workers.json"))
+}
+
+// "workers" is the Claude workers file; anything else (or nothing) is OpenCode's config.
+fn path_for(file: &Option<String>) -> PathBuf {
+    match file.as_deref() {
+        Some("workers") => workers_path(),
+        _ => config_path(),
+    }
+}
+
 fn revision(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -75,8 +88,8 @@ struct ConfigFile {
 }
 
 #[tauri::command]
-fn config_read() -> Result<ConfigFile, String> {
-    let path = config_path();
+fn config_read(file: Option<String>) -> Result<ConfigFile, String> {
+    let path = path_for(&file);
     match fs::read(&path) {
         Ok(bytes) => Ok(ConfigFile {
             revision: revision(&bytes),
@@ -85,7 +98,11 @@ fn config_read() -> Result<ConfigFile, String> {
             exists: true,
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ConfigFile {
-            raw: "{\n  \"$schema\": \"https://opencode.ai/config.json\"\n}\n".into(),
+            raw: if file.as_deref() == Some("workers") {
+                "{\n  \"workers\": {}\n}\n".into()
+            } else {
+                "{\n  \"$schema\": \"https://opencode.ai/config.json\"\n}\n".into()
+            },
             path: path.display().to_string(),
             revision: "missing".into(),
             exists: false,
@@ -102,12 +119,12 @@ struct Saved {
 
 // Writes only when the file still has the revision the editor loaded; backs it up, then replaces it atomically.
 #[tauri::command]
-fn config_write(text: String, revision_seen: String) -> Result<Saved, String> {
+fn config_write(text: String, revision_seen: String, file: Option<String>) -> Result<Saved, String> {
     if SAVING.swap(true, Ordering::SeqCst) {
         return Err("A save is already in progress.".into());
     }
     let result = (|| {
-        let path = config_path();
+        let path = path_for(&file);
         let current = match fs::read(&path) {
             Ok(b) => Some(b),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

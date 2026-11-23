@@ -9,7 +9,7 @@ This fills that gap: LM Studio, llama.cpp, Strata and any other OpenAI-compatibl
 
 ## What it does
 
-Three pages; everyday edits are plain switches and fields, no JSON.
+Four pages; everyday edits are plain switches and fields, no JSON.
 
 - **Models.** The default model, then one card per server with its models in a table: display name, context,
   max output (type `32k` or `1m`), tools, vision, reasoning (Auto / Off / On), default, enabled. Expand a row for effort
@@ -28,6 +28,9 @@ Three pages; everyday edits are plain switches and fields, no JSON.
   - **Import from OpenCode** makes one agent per model OpenCode lists (and unsaved models in this file): OpenCode's
     free models and older versions of a model line are left out, local models are all offered, and models an agent
     already runs on start unticked. Pick a mode for all of them and edit any name before importing.
+- **Claude workers.** Named Claude Code workers for the OpenCode bridge (claude-flash-bridge): model, default effort,
+  read-only or not, description and instructions, saved to `~/.claude/claude-workers.json`. "Add the starter set" creates
+  cc-haiku, cc-sonnet and cc-reviewer. Claude sessions pick up changes within seconds.
 - **Advanced.** Every other setting through a form generated from OpenCode's schema, and the raw JSON.
 - **Reload OpenCode** runs `opencode reload` so the running service picks up the saved file.
 

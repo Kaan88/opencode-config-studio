@@ -317,3 +317,33 @@ export function importCandidates(models, agents = {}) {
       return { ref, provider: m.provider, id: m.id, label: m.name || m.id, name, local: !!m.local, exists: used.has(ref) };
     });
 }
+
+// ---- Claude workers: Claude Code itself, run in the background through the OpenCode bridge ----
+// File (read by the bridge): { "workers": { "<name>": { model, effort?, readOnly?, disabled?, description?, instructions? } } }
+export const WORKER_MODELS = [
+  { value: "fable", label: "Fable" },
+  { value: "opus", label: "Opus" },
+  { value: "sonnet", label: "Sonnet" },
+  { value: "haiku", label: "Haiku" },
+];
+export const WORKER_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export const WORKER_NAME = /^[A-Za-z0-9][\w.-]*$/;
+export function checkWorkers(file) {
+  for (const [name, w] of Object.entries(file?.workers || {})) {
+    if (!WORKER_NAME.test(name)) throw Error(`Worker "${name}": use letters, numbers, dots, dashes or underscores for the name.`);
+    if (!WORKER_MODELS.some((m) => m.value === w.model)) throw Error(`Worker "${name}": pick a model.`);
+    if (w.effort && !WORKER_EFFORTS.includes(w.effort)) throw Error(`Worker "${name}": unknown effort "${w.effort}".`);
+  }
+  return true;
+}
+export const STARTER_WORKERS = {
+  "cc-haiku": { model: "haiku", effort: "low", readOnly: true, description: "Cheap and fast: bulk reading, searching and summaries." },
+  "cc-sonnet": { model: "sonnet", description: "General worker: well-specified changes, tests, fixes with a known cause." },
+  "cc-reviewer": {
+    model: "opus",
+    effort: "high",
+    readOnly: true,
+    description: "Reviews code for correctness bugs.",
+    instructions: "You are a code reviewer. Report correctness bugs only, most severe first, each with file:line, what goes wrong and a concrete failing input. No style comments.",
+  },
+};

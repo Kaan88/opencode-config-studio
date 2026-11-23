@@ -1,5 +1,5 @@
 // App state: the draft config, file revision, schema, OpenCode's live model catalog, and save/load.
-import { decode, isFreeModel, isLocalUrl, makeValidator, mergeText } from "./core.js";
+import { checkWorkers, decode, isFreeModel, isLocalUrl, makeValidator, mergeText } from "./core.js";
 
 export const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
@@ -16,6 +16,11 @@ export const S = {
   catalogError: "",
   page: "models",
   rawDraft: null, // text of the raw JSON editor while it has edits
+  base: "", // the config as loaded, to tell whether it needs writing
+  workers: { workers: {} }, // the Claude workers file (read by the OpenCode bridge)
+  workersRev: "",
+  workersPath: "",
+  workersBase: "",
 };
 
 let renderFn = () => {};
@@ -51,6 +56,17 @@ export async function loadFile() {
   S.path = r.path;
   S.exists = r.exists;
   S.rawDraft = null;
+  S.base = JSON.stringify(S.config);
+  const w = await invoke("config_read", { file: "workers" });
+  try {
+    S.workers = JSON.parse(w.raw);
+  } catch (e) {
+    throw Error(`${w.path} is not valid JSON (${e.message}). Fix or delete it, then reload.`);
+  }
+  S.workers.workers ??= {};
+  S.workersRev = w.revision;
+  S.workersPath = w.path;
+  S.workersBase = JSON.stringify(S.workers);
   clean();
 }
 
@@ -62,14 +78,31 @@ export async function saveFile() {
     bad.reportValidity();
     throw Error("Fix the highlighted field before saving.");
   }
-  S.check(S.config);
-  const disk = await invoke("config_read");
-  if (disk.revision !== S.revision) throw Error("The file changed outside this editor. Reload it before saving (copy your edits from Advanced → Raw JSON first).");
-  const text = disk.exists ? mergeText(disk.raw, decode(disk.raw), S.config) : JSON.stringify(S.config, null, 2) + "\n";
-  S.check(decode(text));
-  const r = await invoke("config_write", { text, revisionSeen: S.revision });
-  S.revision = r.revision;
-  S.exists = true;
+  const configChanged = JSON.stringify(S.config) !== S.base;
+  const workersChanged = JSON.stringify(S.workers) !== S.workersBase;
+  // check everything before writing anything
+  if (configChanged) S.check(S.config);
+  if (workersChanged) checkWorkers(S.workers);
+  let r = {};
+  if (configChanged) {
+    const disk = await invoke("config_read");
+    if (disk.revision !== S.revision) throw Error("The file changed outside this editor. Reload it before saving (copy your edits from Advanced → Raw JSON first).");
+    const text = disk.exists ? mergeText(disk.raw, decode(disk.raw), S.config) : JSON.stringify(S.config, null, 2) + "\n";
+    S.check(decode(text));
+    r = await invoke("config_write", { text, revisionSeen: S.revision });
+    S.revision = r.revision;
+    S.exists = true;
+    S.base = JSON.stringify(S.config);
+  }
+  if (workersChanged) {
+    const disk = await invoke("config_read", { file: "workers" });
+    if (disk.revision !== S.workersRev) throw Error(`${S.workersPath} changed outside this editor. Reload before saving.`);
+    const w = await invoke("config_write", { text: JSON.stringify(S.workers, null, 2) + "\n", revisionSeen: S.workersRev, file: "workers" });
+    S.workersRev = w.revision;
+    S.workersBase = JSON.stringify(S.workers);
+    r.backup ||= w.backup;
+    r.workers = true;
+  }
   clean();
   return r;
 }

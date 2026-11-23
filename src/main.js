@@ -3,9 +3,10 @@ import { $, act, button, confirmDialog, el, notice } from "./dom.js";
 import { advancedPage } from "./pages/advanced.js";
 import { agentsPage } from "./pages/agents.js";
 import { modelsPage } from "./pages/models.js";
+import { workersPage } from "./pages/workers.js";
 import { applyRaw, invoke, loadCatalog, loadFile, loadSchema, onDirty, S, saveFile, setRender } from "./state.js";
 
-const PAGES = { models: ["Models", modelsPage], agents: ["Agents", agentsPage], advanced: ["Advanced", advancedPage] };
+const PAGES = { models: ["Models", modelsPage], agents: ["Agents", agentsPage], workers: ["Claude workers", workersPage], advanced: ["Advanced", advancedPage] };
 
 function nav() {
   $("#nav").replaceChildren(
@@ -43,7 +44,10 @@ const save = () => act(async () => {
   try {
     const r = await saveFile();
     render();
-    notice(el("span", {}, "Saved. ", r.backup ? el("span", { class: "muted", text: "Backup written beside the file. " }) : null, button("Reload OpenCode", reload, "linkish"), " to apply it now."), "ok");
+    const backup = r.backup ? el("span", { class: "muted", text: "Backup written beside the file. " }) : null;
+    // worker changes reach Claude by themselves; only opencode.json needs OpenCode to reload
+    if (r.revision) notice(el("span", {}, "Saved. ", backup, button("Reload OpenCode", reload, "linkish"), " to apply it now."), "ok");
+    else notice(el("span", {}, "Saved. ", backup, r.workers ? "Claude sessions pick up the workers within seconds." : ""), "ok");
   } finally {
     $("#save").disabled = false;
   }

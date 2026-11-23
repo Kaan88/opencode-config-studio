@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly, editPolicy, setEditPolicy } from "../src/core.js";
+import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly, editPolicy, setEditPolicy, checkWorkers, STARTER_WORKERS } from "../src/core.js";
 
 const check = makeValidator(JSON.parse(readFileSync(new URL("../src/schema.json", import.meta.url))), JSON.parse(readFileSync(new URL("../src/model-schema.json", import.meta.url))));
 const wrap = (m) => ({ providers: { p: { ...newBackend({ name: "P", url: "http://127.0.0.1:1/v1" }), models: { m } } } });
@@ -74,4 +74,11 @@ test("edit policy: allow, ask, deny; own rules kept after the managed ones", () 
   setEditPolicy(a, "allow");
   assert.equal(editPolicy(a), "allow");
   check({ agents: { x: setEditPolicy({ model: "a/b" }, "ask") } });
+});
+
+test("claude workers: names, models and efforts are checked; starters are valid", () => {
+  assert.ok(checkWorkers({ workers: STARTER_WORKERS }));
+  assert.throws(() => checkWorkers({ workers: { "bad name": { model: "haiku" } } }), /name/);
+  assert.throws(() => checkWorkers({ workers: { x: { model: "gpt" } } }), /model/);
+  assert.throws(() => checkWorkers({ workers: { x: { model: "opus", effort: "ultra" } } }), /effort/);
 });
