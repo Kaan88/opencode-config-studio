@@ -2,22 +2,35 @@
 import { $, act, button, confirmDialog, el, notice } from "./dom.js";
 import { advancedPage } from "./pages/advanced.js";
 import { agentsPage } from "./pages/agents.js";
+import { bridgePage } from "./pages/bridge.js";
+import { contextPage } from "./pages/context.js";
 import { modelsPage } from "./pages/models.js";
 import { workersPage } from "./pages/workers.js";
 import { applyRaw, invoke, loadCatalog, loadFile, loadSchema, onDirty, S, saveFile, setRender } from "./state.js";
 
-const PAGES = { models: ["Models", modelsPage], agents: ["Agents", agentsPage], workers: ["Claude workers", workersPage], advanced: ["Advanced", advancedPage] };
+const PAGES = { models: ["Models", modelsPage], agents: ["Agents", agentsPage], context: ["Context", contextPage], advanced: ["Advanced", advancedPage], workers: ["Workers", workersPage], bridge: ["Bridge", bridgePage] };
+// The sidebar says whose settings a page holds: OpenCode's own, or what Claude Code can reach through the bridge.
+const GROUPS = [
+  ["OpenCode", "Used by OpenCode itself", ["models", "agents", "context", "advanced"]],
+  ["Claude bridge", "What Claude Code can hand work to", ["workers", "bridge"]],
+];
+
+export function go(id) {
+  return act(() => {
+    if (S.page === "advanced" && id !== "advanced") applyRaw();
+    S.page = id;
+    render();
+    $("#content").scrollTop = 0;
+    $("#content").focus();
+  });
+}
 
 function nav() {
   $("#nav").replaceChildren(
-    ...Object.entries(PAGES).map(([id, [label]]) =>
-      button(label, () => act(() => {
-        if (S.page === "advanced" && id !== "advanced") applyRaw();
-        S.page = id;
-        render();
-        $("#content").focus();
-      }), S.page === id ? "navitem on" : "navitem", { "aria-current": S.page === id ? "page" : null }),
-    ),
+    ...GROUPS.flatMap(([title, hint, ids]) => [
+      el("div", { class: "navgroup", title: hint }, title, el("small", { text: hint })),
+      ...ids.map((id) => button(PAGES[id][0], () => go(id), S.page === id ? "navitem on" : "navitem", { "aria-current": S.page === id ? "page" : null })),
+    ]),
   );
 }
 
@@ -47,7 +60,7 @@ const save = () => act(async () => {
     const backup = r.backup ? el("span", { class: "muted", text: "Backup written beside the file. " }) : null;
     // worker changes reach Claude by themselves; only opencode.json needs OpenCode to reload
     if (r.revision) notice(el("span", {}, "Saved. ", backup, button("Reload OpenCode", reload, "linkish"), " to apply it now."), "ok");
-    else notice(el("span", {}, "Saved. ", backup, r.workers ? "Claude sessions pick up the workers within seconds." : ""), "ok");
+    else notice(el("span", {}, "Saved. ", backup, r.workers ? "Claude sessions pick up the worker list within seconds." : ""), "ok");
   } finally {
     $("#save").disabled = false;
   }

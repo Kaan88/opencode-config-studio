@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly, editPolicy, setEditPolicy, checkWorkers, STARTER_WORKERS } from "../src/core.js";
+import { makeValidator, reasoningOf, setReasoning, setVision, hasVision, setPath, parseTokens, formatTokens, parseRef, formatRef, newBackend, freeId, localTwin, isReadOnly, setReadOnly, editPolicy, setEditPolicy, checkWorkers, STARTER_WORKERS, migrateWorkers, workersOfAgent, contextState, setContextMode, skipsMagic, setSkipMagic, MAGIC_SKIP } from "../src/core.js";
 
 const check = makeValidator(JSON.parse(readFileSync(new URL("../src/schema.json", import.meta.url))), JSON.parse(readFileSync(new URL("../src/model-schema.json", import.meta.url))));
 const wrap = (m) => ({ providers: { p: { ...newBackend({ name: "P", url: "http://127.0.0.1:1/v1" }), models: { m } } } });
@@ -76,9 +76,63 @@ test("edit policy: allow, ask, deny; own rules kept after the managed ones", () 
   check({ agents: { x: setEditPolicy({ model: "a/b" }, "ask") } });
 });
 
-test("claude workers: names, models and efforts are checked; starters are valid", () => {
+test("workers: names, what runs them, models and efforts are checked; starters are valid", () => {
   assert.ok(checkWorkers({ workers: STARTER_WORKERS }));
-  assert.throws(() => checkWorkers({ workers: { "bad name": { model: "haiku" } } }), /name/);
-  assert.throws(() => checkWorkers({ workers: { x: { model: "gpt" } } }), /model/);
-  assert.throws(() => checkWorkers({ workers: { x: { model: "opus", effort: "ultra" } } }), /effort/);
+  assert.ok(checkWorkers({ default: "f", workers: { f: { runs: "opencode", agent: "deepseek-flash", model: "deepseek/deepseek-flash", effort: "high" } } }));
+  assert.throws(() => checkWorkers({ workers: { "bad name": { runs: "claude", model: "haiku" } } }), /name/);
+  assert.throws(() => checkWorkers({ workers: { x: { runs: "claude", model: "gpt" } } }), /model/);
+  assert.throws(() => checkWorkers({ workers: { x: { runs: "claude", model: "opus", effort: "ultra" } } }), /effort/);
+  assert.throws(() => checkWorkers({ workers: { x: { model: "opus" } } }), /what runs it/);
+  assert.throws(() => checkWorkers({ workers: { x: { runs: "opencode" } } }), /agent/);
+  assert.throws(() => checkWorkers({ workers: { x: { runs: "opencode", agent: "a", model: "no-slash" } } }), /provider\/id/);
+  assert.throws(() => checkWorkers({ default: "gone", workers: {} }), /default worker/);
+});
+
+test("workers: the list of an earlier install is the default agent plus its Claude workers", () => {
+  const legacy = { workers: { "cc-sonnet": { model: "sonnet" }, "cc-reviewer": { model: "opus", readOnly: true } } };
+  const made = migrateWorkers(legacy, { "deepseek-flash": { description: "Cheap." }, other: {} });
+  assert.deepEqual(made, {
+    default: "deepseek-flash",
+    workers: {
+      "deepseek-flash": { runs: "opencode", agent: "deepseek-flash", description: "Cheap." },
+      "cc-sonnet": { runs: "claude", model: "sonnet" },
+      "cc-reviewer": { runs: "claude", model: "opus", readOnly: true },
+    },
+  });
+  assert.ok(checkWorkers(made));
+  assert.deepEqual(migrateWorkers({}, {}), { workers: {} }, "nothing to start from");
+  assert.deepEqual(migrateWorkers(legacy, {}).default, "cc-sonnet", "no default agent: the first worker");
+  assert.deepEqual(workersOfAgent(made, "deepseek-flash"), ["deepseek-flash"]);
+  assert.deepEqual(workersOfAgent(made, "other"), []);
+});
+
+test("context: one switch lists the plugin and turns OpenCode's compaction off, or the reverse", () => {
+  const cfg = { plugins: ["@cortexkit/opencode-magic-context@latest", "@el4cteo/opencode-goal"], compaction: { auto: false, prune: false } };
+  assert.deepEqual(contextState(cfg), { magic: true, spec: "@cortexkit/opencode-magic-context@latest", native: false, mode: "magic" });
+  setContextMode(cfg, "native");
+  assert.deepEqual(cfg, { plugins: ["@el4cteo/opencode-goal"], compaction: { auto: true } });
+  assert.equal(contextState(cfg).mode, "native");
+  check(cfg);
+  setContextMode(cfg, "magic", "@cortexkit/opencode-magic-context@0.49.71");
+  assert.deepEqual(cfg, { plugins: ["@cortexkit/opencode-magic-context@0.49.71", "@el4cteo/opencode-goal"], compaction: { auto: false, prune: false } });
+  check(cfg);
+  // the other shapes: the object form, the older "plugin" key, and nothing set at all
+  assert.equal(contextState({ plugins: [{ package: "@cortexkit/opencode-magic-context" }] }).mode, "both", "listed, and compaction left at its default");
+  assert.equal(contextState({}).mode, "native");
+  assert.equal(contextState({ compaction: { auto: false } }).mode, "none");
+  assert.deepEqual(setContextMode({ plugin: ["other"] }, "magic"), { plugin: ["@cortexkit/opencode-magic-context", "other"], compaction: { auto: false, prune: false } });
+  assert.deepEqual(setContextMode({ plugins: [{ package: "@cortexkit/opencode-magic-context@1.0.0" }] }, "native"), { compaction: { auto: true } });
+  assert.deepEqual(setContextMode({ compaction: { auto: false, buffer: "30%" } }, "native").compaction, { auto: true, buffer: "30%" }, "other compaction settings stay");
+});
+
+test("context: the plugin's opt-out line is added to and taken out of an agent's instructions", () => {
+  const a = { system: "Be brief." };
+  assert.equal(skipsMagic(a), false);
+  setSkipMagic(a, true);
+  assert.equal(a.system, "Be brief.\n\n" + MAGIC_SKIP);
+  setSkipMagic(a, true);
+  assert.equal(a.system.split(MAGIC_SKIP).length, 2, "added once");
+  assert.ok(skipsMagic(a));
+  assert.deepEqual(setSkipMagic(a, false), { system: "Be brief." });
+  assert.deepEqual(setSkipMagic(setSkipMagic({}, true), false), {}, "no empty instructions left behind");
 });

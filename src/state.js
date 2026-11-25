@@ -1,5 +1,5 @@
 // App state: the draft config, file revision, schema, OpenCode's live model catalog, and save/load.
-import { checkWorkers, decode, isFreeModel, isLocalUrl, makeValidator, mergeText } from "./core.js";
+import { checkWorkers, decode, isFreeModel, isLocalUrl, makeValidator, mergeText, migrateWorkers } from "./core.js";
 
 export const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
@@ -17,10 +17,13 @@ export const S = {
   page: "models",
   rawDraft: null, // text of the raw JSON editor while it has edits
   base: "", // the config as loaded, to tell whether it needs writing
-  workers: { workers: {} }, // the Claude workers file (read by the OpenCode bridge)
+  workers: { workers: {} }, // the bridge's worker list: what Claude may run
   workersRev: "",
   workersPath: "",
   workersBase: "",
+  workersImported: false, // the list is not on disk yet: it was made from the earlier Claude workers file
+  bridge: null, // the bridge's install state (the Bridge page)
+  bridgeError: "",
 };
 
 let renderFn = () => {};
@@ -58,11 +61,16 @@ export async function loadFile() {
   S.rawDraft = null;
   S.base = JSON.stringify(S.config);
   const w = await invoke("config_read", { file: "workers" });
-  try {
-    S.workers = JSON.parse(w.raw);
-  } catch (e) {
-    throw Error(`${w.path} is not valid JSON (${e.message}). Fix or delete it, then reload.`);
-  }
+  const parse = (f) => {
+    try {
+      return JSON.parse(f.raw);
+    } catch (e) {
+      throw Error(`${f.path} is not valid JSON (${e.message}). Fix or delete it, then reload.`);
+    }
+  };
+  // no list yet: show what the bridge uses meanwhile (the default agent and the earlier Claude workers file)
+  S.workersImported = !w.exists;
+  S.workers = w.exists ? parse(w) : migrateWorkers(parse(await invoke("config_read", { file: "workers_legacy" })), S.config.agents || {});
   S.workers.workers ??= {};
   S.workersRev = w.revision;
   S.workersPath = w.path;
@@ -100,6 +108,7 @@ export async function saveFile() {
     const w = await invoke("config_write", { text: JSON.stringify(S.workers, null, 2) + "\n", revisionSeen: S.workersRev, file: "workers" });
     S.workersRev = w.revision;
     S.workersBase = JSON.stringify(S.workers);
+    S.workersImported = false;
     r.backup ||= w.backup;
     r.workers = true;
   }

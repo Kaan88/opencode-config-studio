@@ -74,6 +74,10 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:16p
 aside{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
 .navitem{display:block;width:100%;text-align:left;border-color:transparent;background:transparent;padding:8px 12px;font-weight:550}
 .navitem.on{background:var(--accent-bg);border-color:transparent;color:var(--text)}
+.navgroup{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650;padding:14px 12px 4px}
+.navgroup:first-child{padding-top:2px}
+.navgroup small{display:block;text-transform:none;letter-spacing:0;font-weight:400;font-size:11px}
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 18px;margin:10px 0;align-items:baseline}
 .filebox{margin-top:auto;padding:12px 6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;font-size:12px}
 .filebox .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .filebox a{color:var(--accent)}
@@ -171,7 +175,7 @@ dialog::backdrop{background:#0008}
 .syncrow .grow{flex:1;overflow-wrap:anywhere}
 .syncrow .importname{width:190px;flex:none}
 
-@media (max-width:900px){.shell{grid-template-columns:1fr}aside{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.navitem{width:auto}.filebox{display:none}main{padding:16px}.agentgrid{grid-template-columns:1fr}}
+@media (max-width:900px){.shell{grid-template-columns:1fr}aside{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}#nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px}.navgroup{padding:4px 8px}.navgroup small{display:none}.navitem{width:auto}.filebox{display:none}main{padding:16px}.agentgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>

@@ -236,7 +236,7 @@ const POLICY_RULES = {
 };
 export const EDIT_POLICIES = [
   { value: "allow", label: "Allowed" },
-  { value: "ask", label: "Ask first (Claude can still run it read-only)" },
+  { value: "ask", label: "Ask first (fits a worker for Claude)" },
   { value: "deny", label: "Blocked (read-only)" },
 ];
 export function editPolicy(a) {
@@ -318,8 +318,10 @@ export function importCandidates(models, agents = {}) {
     });
 }
 
-// ---- Claude workers: Claude Code itself, run in the background through the OpenCode bridge ----
-// File (read by the bridge): { "workers": { "<name>": { model, effort?, readOnly?, disabled?, description?, instructions? } } }
+// ---- workers: the one list of what Claude can run through the bridge ----
+// File (read by the bridge, ~/.config/opencode-bridge/workers.json):
+// { "default": "<name>", "workers": { "<name>": { runs: "opencode", agent, model?, effort?, readOnly?, disabled?, description? }
+//                                   | { runs: "claude", model, effort?, readOnly?, disabled?, description?, instructions? } } }
 export const WORKER_MODELS = [
   { value: "fable", label: "Fable" },
   { value: "opus", label: "Opus" },
@@ -328,18 +330,30 @@ export const WORKER_MODELS = [
 ];
 export const WORKER_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 export const WORKER_NAME = /^[A-Za-z0-9][\w.-]*$/;
+export const WORKER_RUNS = [
+  { value: "opencode", label: "An OpenCode agent" },
+  { value: "claude", label: "Claude Code itself" },
+];
 export function checkWorkers(file) {
-  for (const [name, w] of Object.entries(file?.workers || {})) {
+  const list = file?.workers || {};
+  for (const [name, w] of Object.entries(list)) {
     if (!WORKER_NAME.test(name)) throw Error(`Worker "${name}": use letters, numbers, dots, dashes or underscores for the name.`);
-    if (!WORKER_MODELS.some((m) => m.value === w.model)) throw Error(`Worker "${name}": pick a model.`);
-    if (w.effort && !WORKER_EFFORTS.includes(w.effort)) throw Error(`Worker "${name}": unknown effort "${w.effort}".`);
+    if (w.runs === "claude") {
+      if (!WORKER_MODELS.some((m) => m.value === w.model)) throw Error(`Worker "${name}": pick a Claude model.`);
+      if (w.effort && !WORKER_EFFORTS.includes(w.effort)) throw Error(`Worker "${name}": unknown effort "${w.effort}".`);
+    } else if (w.runs === "opencode") {
+      if (!w.agent || typeof w.agent !== "string") throw Error(`Worker "${name}": pick the OpenCode agent it runs.`);
+      if (w.model && !/^[^/\s#]+\/[^\s#]+$/.test(w.model)) throw Error(`Worker "${name}": the model must look like provider/id.`);
+    } else throw Error(`Worker "${name}": choose what runs it, an OpenCode agent or Claude Code.`);
   }
+  if (file?.default && !list[file.default]) throw Error(`The default worker "${file.default}" is not in the list.`);
   return true;
 }
 export const STARTER_WORKERS = {
-  "cc-haiku": { model: "haiku", effort: "low", readOnly: true, description: "Cheap and fast: bulk reading, searching and summaries." },
-  "cc-sonnet": { model: "sonnet", description: "General worker: well-specified changes, tests, fixes with a known cause." },
+  "cc-haiku": { runs: "claude", model: "haiku", effort: "low", readOnly: true, description: "Cheap and fast: bulk reading, searching and summaries." },
+  "cc-sonnet": { runs: "claude", model: "sonnet", description: "General worker: well-specified changes, tests, fixes with a known cause." },
   "cc-reviewer": {
+    runs: "claude",
     model: "opus",
     effort: "high",
     readOnly: true,
@@ -347,3 +361,66 @@ export const STARTER_WORKERS = {
     instructions: "You are a code reviewer. Report correctness bugs only, most severe first, each with file:line, what goes wrong and a concrete failing input. No style comments.",
   },
 };
+// The worker an OpenCode agent gets when the user offers it to Claude.
+export const agentWorker = (agentName, agent = {}) => ({ runs: "opencode", agent: agentName, ...(agent.description ? { description: agent.description } : {}) });
+// The workers that run a given OpenCode agent, by name.
+export const workersOfAgent = (file, agentName) =>
+  Object.entries(file?.workers || {})
+    .filter(([, w]) => w.runs === "opencode" && w.agent === agentName)
+    .map(([name]) => name);
+// The list an install from before the one list had: the default agent as an OpenCode worker (when the config has
+// it), then the Claude workers of ~/.claude/claude-workers.json. This is what the bridge uses while the new file
+// does not exist, so saving it changes nothing by itself.
+export function migrateWorkers(legacy, agents = {}, defaultAgent = "deepseek-flash") {
+  const workers = {};
+  if (agents[defaultAgent]) workers[defaultAgent] = agentWorker(defaultAgent, agents[defaultAgent]);
+  for (const [name, w] of Object.entries(legacy?.workers || {})) if (!workers[name] && w && typeof w === "object") workers[name] = { runs: "claude", ...w };
+  const first = Object.keys(workers)[0];
+  return { ...(first ? { default: workers[defaultAgent] ? defaultAgent : first } : {}), workers };
+}
+// What a worker costs, in the words the pages use.
+export const workerBill = (w) => (w.runs === "claude" ? "Uses your Claude plan" : "Does not use your Claude plan");
+
+// ---- context management: the Magic Context plugin, or OpenCode's own compaction ----
+// The two interfere when both run, so the app switches them together: the plugin listed and compaction.auto false,
+// or the plugin not listed and compaction.auto true.
+export const MAGIC_PACKAGE = "@cortexkit/opencode-magic-context";
+// The plugin's own opt-out: an agent whose instructions contain this line gets none of its prompt additions.
+export const MAGIC_SKIP = "<!-- magic-context: skip -->";
+const pluginName = (e) => (typeof e === "string" ? e : Array.isArray(e) ? e[0] : e?.package) || "";
+const isMagic = (e) => pluginName(e) === MAGIC_PACKAGE || pluginName(e).startsWith(MAGIC_PACKAGE + "@");
+export function contextState(config) {
+  const entry = [...(config?.plugins || []), ...(config?.plugin || [])].find(isMagic);
+  const magic = !!entry;
+  const native = config?.compaction?.auto !== false; // OpenCode's default is on
+  return { magic, spec: magic ? pluginName(entry) : "", native, mode: magic && !native ? "magic" : !magic && native ? "native" : magic ? "both" : "none" };
+}
+// mode "magic": the plugin listed (as `spec`), OpenCode's compaction off. mode "native": the reverse.
+export function setContextMode(config, mode, spec = MAGIC_PACKAGE) {
+  const key = Array.isArray(config.plugin) && !Array.isArray(config.plugins) ? "plugin" : "plugins"; // "plugin" is the older name
+  const kept = contextState(config).spec;
+  for (const k of ["plugins", "plugin"])
+    if (Array.isArray(config[k])) {
+      config[k] = config[k].filter((e) => !isMagic(e));
+      if (!config[k].length) delete config[k];
+    }
+  const compaction = { ...(config.compaction || {}) };
+  if (mode === "magic") {
+    config[key] = [kept || spec, ...(config[key] || [])];
+    compaction.auto = false;
+    compaction.prune = false; // what the plugin's own setup writes
+  } else {
+    compaction.auto = true;
+    delete compaction.prune; // a retired setting that only the plugin's setup wrote
+  }
+  config.compaction = compaction;
+  return config;
+}
+export const skipsMagic = (agent) => String(agent?.system || "").includes(MAGIC_SKIP);
+export function setSkipMagic(agent, on) {
+  const was = String(agent.system || "");
+  const next = on ? (was.includes(MAGIC_SKIP) ? was : (was ? was + "\n\n" : "") + MAGIC_SKIP) : was.split(MAGIC_SKIP).join("").trim();
+  if (next) agent.system = next;
+  else delete agent.system;
+  return agent;
+}

@@ -1,9 +1,10 @@
 // Agents page: the default agent, then one card per agent defined in the config.
-import { EDIT_POLICIES, editPolicy, importCandidates, isLocalUrl, setEditPolicy, setPath } from "../core.js";
+import { EDIT_POLICIES, editPolicy, importCandidates, isLocalUrl, setEditPolicy, setPath, workersOfAgent } from "../core.js";
 import { act, button, confirmDialog, dialog, el, field, notice, select, textInput, toggle } from "../dom.js";
 import { modelPicker } from "../pickers.js";
 import { boundEditor, resolve } from "../schemaEditor.js";
 import { mark, render, S } from "../state.js";
+import { offerAgent } from "./workers.js";
 
 const BUILT_IN = ["build", "plan", "general", "explore"];
 const MODES = [
@@ -17,7 +18,7 @@ export function agentsPage(root) {
   const names = [...new Set([...BUILT_IN, ...Object.keys(S.config.agents || {})])];
   if (S.config.default_agent && !names.includes(S.config.default_agent)) names.push(S.config.default_agent);
   root.append(
-    el("div", { class: "pagehead" }, el("div", {}, el("h2", { text: "Agents" }), el("p", { class: "lead", text: "Agents pair a model with instructions and permissions. Built-in agents (build, plan, general, explore) can be overridden here too." })), el("div", { class: "actions" }, button("Import from OpenCode…", () => act(importDialog)), button("+ New agent", newAgentDialog, "primary"))),
+    el("div", { class: "pagehead" }, el("div", {}, el("h2", { text: "Agents" }), el("p", { class: "lead", text: "Agents pair a model with instructions and permissions, for OpenCode itself. Built-in agents (build, plan, general, explore) can be overridden here too. Claude Code can run an agent only when a worker on the Workers page offers it." })), el("div", { class: "actions" }, button("Import from OpenCode…", () => act(importDialog)), button("+ New agent", newAgentDialog, "primary"))),
     el("section", { class: "card compact" }, el("div", { class: "split" }, el("div", {}, el("h3", { text: "Default agent" }), el("p", { class: "hint", text: "The agent new sessions start with." })), select([{ value: "", label: "OpenCode default (build)" }, ...names.map((n) => ({ value: n, label: n }))], S.config.default_agent || "", (v) => (setPath(S.config, ["default_agent"], v || undefined), mark()), "Default agent"))),
   );
   const list = Object.entries(S.config.agents || {});
@@ -27,6 +28,7 @@ export function agentsPage(root) {
 
 function agentCard(name, a) {
   const rules = (a.permissions || []).length;
+  const offered = workersOfAgent(S.workers, name);
   const instructions = el("details", { class: "inline" }, el("summary", { text: a.system ? "Instructions (custom)" : "Instructions" }));
   instructions.append(el("textarea", { rows: "6", "aria-label": `Instructions for ${name}`, placeholder: "Extra system prompt for this agent (optional)", value: a.system || "", oninput: (e) => (setPath(a, ["system"], e.target.value || undefined), mark()) }));
   return el(
@@ -35,7 +37,7 @@ function agentCard(name, a) {
     el(
       "header",
       { class: "backendhead" },
-      el("div", { class: "title" }, el("h3", { text: name }), el("div", { class: "meta" }, BUILT_IN.includes(name) ? el("span", { class: "status", text: "overrides built-in" }) : null, a.hidden ? el("span", { class: "status", text: "hidden" }) : null)),
+      el("div", { class: "title" }, el("h3", { text: name }), el("div", { class: "meta" }, BUILT_IN.includes(name) ? el("span", { class: "status", text: "overrides built-in" }) : null, a.hidden ? el("span", { class: "status", text: "hidden" }) : null, offered.length ? el("span", { class: "status up", text: `offered to Claude as ${offered.join(", ")}` }) : el("span", { class: "status", text: "not offered to Claude" }))),
       el("div", { class: "actions" }, el("label", { class: "inline-toggle" }, toggle(!a.disabled, (v) => (setPath(a, ["disabled"], v ? undefined : true), mark(), render()), `${name} enabled`), "Enabled"), button("Delete", () => confirmDialog("Delete this agent?", `Remove the "${name}" agent from the config?`, "Delete", () => {
         delete agents()[name];
         if (S.config.default_agent === name) delete S.config.default_agent;
@@ -47,13 +49,17 @@ function agentCard(name, a) {
       field("Model", modelPicker(a.model, (v) => (setPath(a, ["model"], v || undefined), mark()), { label: `Model for ${name}`, emptyLabel: "OpenCode default model" })),
       field("Mode", select(MODES, a.mode || "all", (v) => (setPath(a, ["mode"], v), mark()), `Mode for ${name}`)),
       field("Description", textInput(a.description, (v) => (setPath(a, ["description"], v || undefined), mark()), `Description for ${name}`, { placeholder: "When to use this agent" }), "Shown to other agents deciding whether to call it."),
-      field("Edits & shell commands", select(EDIT_POLICIES, editPolicy(a), (v) => (setEditPolicy(a, v), mark(), render()), `Edits and shell commands for ${name}`), "Ask first lets Claude run it for read-only jobs and, when it allows edits, for edit jobs."),
+      field("Edits & shell commands", select(EDIT_POLICIES, editPolicy(a), (v) => (setEditPolicy(a, v), mark(), render()), `Edits and shell commands for ${name}`), "Ask first is what a worker needs: its read-only jobs can change nothing, and its edit jobs are approved."),
     ),
     el("div", { class: "switches" },
       el("label", { class: "inline-toggle" }, toggle(!!a.hidden, (v) => (setPath(a, ["hidden"], v || undefined), mark(), render()), `${name} hidden`), "Hidden", el("small", { class: "hint", text: "not listed in the agent picker" })),
     ),
     instructions,
-    el("div", { class: "toolbar" }, el("small", { class: "hint", text: rules ? `${rules} permission rule${rules > 1 ? "s" : ""}` : "Default permissions" }), button("Permissions & all fields…", () => dialog(`All fields · ${name}`, boundEditor(resolve(S.schema.$defs["Config.AgentEncoded"]), agents(), name), [{ label: "Done", kind: "primary", run: () => render() }], { wide: true }), "small")),
+    el("div", { class: "toolbar" }, el("small", { class: "hint", text: rules ? `${rules} permission rule${rules > 1 ? "s" : ""}` : "Default permissions" }), offered.length ? null : button("Offer to Claude", () => {
+      const worker = offerAgent(name);
+      render();
+      notice(`Worker "${worker}" added on the Workers page. Save to let Claude run this agent.`, "ok");
+    }, "small"), button("Permissions & all fields…", () => dialog(`All fields · ${name}`, boundEditor(resolve(S.schema.$defs["Config.AgentEncoded"]), agents(), name), [{ label: "Done", kind: "primary", run: () => render() }], { wide: true }), "small")),
   );
 }
 
@@ -112,7 +118,7 @@ function importDialog() {
   const all = (on) => rows.forEach((r) => (r.box.checked = on));
   dialog("Import agents from OpenCode", [
     el("p", { text: `${rows.length} models, newest version of each, OpenCode's free models left out. Each ticked model becomes an agent on that model with its default effort; change the name on the right if you like.` }),
-    el("div", { class: "agentgrid" }, field("Mode for all", select(MODES, mode, (v) => (mode = v), "Mode for imported agents"), "Both: pick them in OpenCode, and let Claude and other agents run them."), field("Edits & shell for all", select(EDIT_POLICIES, policy, (v) => (policy = v), "Edits and shell commands for imported agents"), "Ask first lets Claude run them read-only too.")),
+    el("div", { class: "agentgrid" }, field("Mode for all", select(MODES, mode, (v) => (mode = v), "Mode for imported agents"), "Both: pick them in OpenCode, and let other agents call them."), field("Edits & shell for all", select(EDIT_POLICIES, policy, (v) => (policy = v), "Edits and shell commands for imported agents"), "Ask first suits agents you will offer to Claude as workers.")),
     el("div", { class: "toolbar" }, el("div", { class: "actions" }, button("Select all", () => all(true), "small"), button("Select none", () => all(false), "small"))),
     ...groups.flatMap((g) => [el("h4", { text: g.provider }), ...g.rows.map((r) => r.row)]),
   ], [

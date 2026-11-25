@@ -44,15 +44,25 @@ fn config_path() -> PathBuf {
     }
 }
 
-// The Claude workers file read by the OpenCode bridge: CLAUDE_WORKERS_FILE, else ~/.claude/claude-workers.json.
+// The bridge's worker list (what Claude may run): BRIDGE_WORKERS_FILE, else ~/.config/opencode-bridge/workers.json.
 fn workers_path() -> PathBuf {
+    std::env::var_os("BRIDGE_WORKERS_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".config").join("opencode-bridge").join("workers.json"))
+}
+
+// The Claude workers file from before the one list: CLAUDE_WORKERS_FILE, else ~/.claude/claude-workers.json.
+// Only read, to make the first list from it.
+fn legacy_workers_path() -> PathBuf {
     std::env::var_os("CLAUDE_WORKERS_FILE").map(PathBuf::from).unwrap_or_else(|| home().join(".claude").join("claude-workers.json"))
 }
 
-// "workers" is the Claude workers file; anything else (or nothing) is OpenCode's config.
+// "workers" is the bridge's worker list, "workers_legacy" the earlier Claude workers file; anything else (or
+// nothing) is OpenCode's config.
 fn path_for(file: &Option<String>) -> PathBuf {
     match file.as_deref() {
         Some("workers") => workers_path(),
+        Some("workers_legacy") => legacy_workers_path(),
         _ => config_path(),
     }
 }
@@ -98,7 +108,7 @@ fn config_read(file: Option<String>) -> Result<ConfigFile, String> {
             exists: true,
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ConfigFile {
-            raw: if file.as_deref() == Some("workers") {
+            raw: if matches!(file.as_deref(), Some("workers") | Some("workers_legacy")) {
                 "{\n  \"workers\": {}\n}\n".into()
             } else {
                 "{\n  \"$schema\": \"https://opencode.ai/config.json\"\n}\n".into()
@@ -120,6 +130,9 @@ struct Saved {
 // Writes only when the file still has the revision the editor loaded; backs it up, then replaces it atomically.
 #[tauri::command]
 fn config_write(text: String, revision_seen: String, file: Option<String>) -> Result<Saved, String> {
+    if file.as_deref() == Some("workers_legacy") {
+        return Err("The earlier Claude workers file is only read.".into());
+    }
     if SAVING.swap(true, Ordering::SeqCst) {
         return Err("A save is already in progress.".into());
     }
@@ -343,6 +356,117 @@ fn open_url(url: String) -> Result<(), String> {
     r.map(|_| ()).map_err(|e| e.to_string())
 }
 
+// ---- the bridge: is it installed and registered, and a way to install or update it ----
+
+const BRIDGE_SERVER_URL: &str = "https://raw.githubusercontent.com/Kaan88/claude-flash-bridge/main/server.mjs";
+const BRIDGE_SETUP_PS1: &str = "https://raw.githubusercontent.com/Kaan88/claude-flash-bridge/main/setup.ps1";
+const BRIDGE_SETUP_SH: &str = "https://raw.githubusercontent.com/Kaan88/claude-flash-bridge/main/setup.sh";
+
+#[derive(Serialize)]
+struct BridgeStatus {
+    dir: String,
+    installed: bool,
+    version: Option<String>,
+    latest: Option<String>,
+    claude_code: bool,
+    claude_desktop: bool,
+    node: bool,
+    claude: bool,
+    opencode: bool,
+    command: String,
+}
+
+fn desktop_config() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("Claude").join("claude_desktop_config.json")
+    } else if cfg!(target_os = "macos") {
+        home().join("Library").join("Application Support").join("Claude").join("claude_desktop_config.json")
+    } else {
+        home().join(".config").join("Claude").join("claude_desktop_config.json")
+    }
+}
+
+// The server.mjs a Claude configuration file starts under the name "opencode", if any. Nothing else of the
+// file leaves this function.
+fn registered_server(file: &Path) -> Option<PathBuf> {
+    let v: serde_json::Value = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
+    let args = v.get("mcpServers")?.get("opencode")?.get("args")?.as_array()?;
+    args.iter().filter_map(|a| a.as_str()).find(|a| a.ends_with("server.mjs")).map(PathBuf::from)
+}
+
+// serverInfo: { name: "opencode-agent", version: "3.0.0" } in the bridge's server.mjs
+fn server_version(text: &str) -> Option<String> {
+    let rest = &text[text.find("serverInfo:")?..];
+    let from = rest.find("version: \"")? + 10;
+    let len = rest[from..].find('"')?;
+    Some(rest[from..from + len].to_string())
+}
+
+fn on_path(name: &str) -> bool {
+    let exts: &[&str] = if cfg!(windows) { &[".exe", ".cmd", ".bat"] } else { &[""] };
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| exts.iter().any(|e| dir.join(format!("{name}{e}")).is_file())))
+        .unwrap_or(false)
+}
+
+// The one-step setup of the bridge's README: installs what is missing, updates the bridge, registers it.
+fn bridge_setup_command() -> String {
+    if cfg!(windows) {
+        format!("irm {BRIDGE_SETUP_PS1} | iex")
+    } else {
+        format!("curl -fsSL {BRIDGE_SETUP_SH} | bash")
+    }
+}
+
+#[tauri::command]
+async fn bridge_status() -> Result<BridgeStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let code = registered_server(&home().join(".claude.json"));
+        let desktop = registered_server(&desktop_config());
+        let server = code
+            .clone()
+            .or_else(|| desktop.clone())
+            .unwrap_or_else(|| home().join(".claude").join("mcp-servers").join("opencode-agent").join("server.mjs"));
+        let text = fs::read_to_string(&server).ok();
+        let none = HashMap::new();
+        let latest = get(BRIDGE_SERVER_URL, &none, Duration::from_secs(6)).ok().filter(|r| r.status == 200).and_then(|r| server_version(&r.body));
+        let claude_exe = if cfg!(windows) { "claude.exe" } else { "claude" };
+        BridgeStatus {
+            dir: server.parent().map(|p| p.display().to_string()).unwrap_or_default(),
+            installed: text.is_some(),
+            version: text.as_deref().and_then(server_version),
+            latest,
+            claude_code: code.is_some(),
+            claude_desktop: desktop.is_some(),
+            node: on_path("node"),
+            claude: on_path("claude") || home().join(".local").join("bin").join(claude_exe).is_file(),
+            opencode: find_opencode().is_some(),
+            command: bridge_setup_command(),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// Opens a terminal that runs the bridge's own setup script (the command its README gives), so its questions
+// (a DeepSeek key, typed into OpenCode's own prompt) and its output are in front of the user.
+#[tauri::command]
+fn bridge_install() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let command = bridge_setup_command();
+        Command::new("cmd")
+            .args(["/c", "start", "OpenCode bridge setup", "powershell", "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command.as_str()])
+            .spawn()
+            .map(|_| "A terminal window is running the setup. When it finishes, press Check again.".to_string())
+            .map_err(|e| format!("Could not open a terminal: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        Err(format!("Run this in a terminal: {}", bridge_setup_command()))
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         // one editor per file: starting it again brings the open window forward instead
@@ -352,7 +476,18 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![config_read, config_write, opencode_reload, opencode_models, http_get, schema_candidates, schema_cache_save, open_url])
+        .invoke_handler(tauri::generate_handler![
+            config_read,
+            config_write,
+            opencode_reload,
+            opencode_models,
+            http_get,
+            schema_candidates,
+            schema_cache_save,
+            open_url,
+            bridge_status,
+            bridge_install
+        ])
         .run(tauri::generate_context!())
         .expect("error while running OpenCode Config Studio");
 }

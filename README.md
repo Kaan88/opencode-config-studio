@@ -9,7 +9,9 @@ This fills that gap: LM Studio, llama.cpp, Strata and any other OpenAI-compatibl
 
 ## What it does
 
-Four pages; everyday edits are plain switches and fields, no JSON.
+Six pages in two groups, so it is plain whose settings a page holds. **OpenCode** (Models, Agents, Context, Advanced) is what
+OpenCode itself uses. **Claude bridge** (Workers, Bridge) is what Claude Code can hand work to through
+[claude-flash-bridge](https://github.com/Kaan88/claude-flash-bridge). Everyday edits are plain switches and fields, no JSON.
 
 - **Models.** The default model, then one card per server with its models in a table: display name, context,
   max output (type `32k` or `1m`), tools, vision, reasoning (Auto / Off / On), default, enabled. Expand a row for effort
@@ -28,10 +30,19 @@ Four pages; everyday edits are plain switches and fields, no JSON.
   - **Import from OpenCode** makes one agent per model OpenCode lists (and unsaved models in this file): OpenCode's
     free models and older versions of a model line are left out, local models are all offered, and models an agent
     already runs on start unticked. Pick a mode for all of them and edit any name before importing.
-- **Claude workers.** Named Claude Code workers for the OpenCode bridge (claude-flash-bridge): model, default effort,
-  read-only or not, description and instructions, saved to `~/.claude/claude-workers.json`. "Add the starter set" creates
-  cc-haiku, cc-sonnet and cc-reviewer. Claude sessions pick up changes within seconds.
+- **Context.** One switch for what keeps a long session inside the model's window: the Magic Context plugin on and
+  OpenCode's own compaction off, or the reverse (the two interfere when both run). A second switch keeps the plugin
+  out of the agents that Claude's workers run, by adding the plugin's own opt-out line to their instructions.
 - **Advanced.** Every other setting through a form generated from OpenCode's schema, and the raw JSON.
+- **Workers.** The one list of what Claude may run through the bridge, saved to `~/.config/opencode-bridge/workers.json`.
+  A worker runs an OpenCode agent (optionally on another model) or Claude Code itself (model, effort, instructions);
+  each has a description Claude reads, can be read-only, and one is the default. Claude sees these names and nothing
+  else of OpenCode. Each agent card on the Agents page says whether it is offered to Claude, with an **Offer to Claude**
+  button. The first time, the list is made from the default agent and the older `~/.claude/claude-workers.json`.
+  Claude sessions pick up changes within seconds.
+- **Bridge.** What does what, whether the bridge is installed, its version and the latest one, where it is registered
+  (Claude Code, Claude Desktop), and a button that opens a terminal running the bridge's own setup script to install or
+  update it.
 - **Reload OpenCode** runs `opencode reload` so the running service picks up the saved file.
 
 ## Safe saving
@@ -66,4 +77,4 @@ Windows' 260-character path limit (`LNK1104`); build with a short `CARGO_TARGET_
 and the exe lands in `<that>\release\`. `npm run dev` runs it with live reload of the Rust side.
 
 Layout: `src/core.js` (parsing, validation, comment-preserving edits, sync planning; tested in `test/`),
-`src/main.js` (shell), `src/pages/` (Models, Agents, Advanced), `src/pickers.js` (model + effort picker), `src/backend.js` (server listing and status), `src/schemaEditor.js` (generic schema form), `src-tauri/src/main.rs` (file access, HTTP GET for servers, `opencode reload` and `opencode api model.list`, schema download).
+`src/main.js` (shell), `src/pages/` (Models, Agents, Context, Advanced, Workers, Bridge), `src/pickers.js` (model + effort picker), `src/backend.js` (server listing and status), `src/schemaEditor.js` (generic schema form), `src-tauri/src/main.rs` (file access, HTTP GET for servers, `opencode reload` and `opencode api model.list`, schema download).
