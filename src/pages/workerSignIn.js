@@ -43,7 +43,6 @@ export function workerSignIn() {
     ]);
     input.closest("dialog")?.addEventListener("close", () => { input.value = ""; }, { once: true });
   }
-  load();
   return section;
 }
 
