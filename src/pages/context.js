@@ -1,13 +1,11 @@
 // Context page: what keeps a long OpenCode session inside the model's window. Either the Magic Context plugin or
 // OpenCode's own compaction; one switch turns one on and the other off, because the two interfere when both run.
-import { MAGIC_PACKAGE, MAGIC_SKIP, contextState, setContextMode, setSkipMagic, skipsMagic } from "../core.js";
+import { MAGIC_PACKAGE, contextState, setContextMode } from "../core.js";
 import { el, toggle } from "../dom.js";
 import { mark, render, S } from "../state.js";
 
 let lastSpec = ""; // the plugin entry as it was before it was switched off, so switching back restores the same version
 
-// The agents in this file that a worker for Claude runs (built-in agents without an entry here have no instructions to mark).
-const workerAgents = () => [...new Set(Object.values(S.workers.workers || {}).filter((w) => w.runs === "opencode" && !w.disabled).map((w) => w.agent))].filter((n) => S.config.agents?.[n]);
 
 export function contextPage(root) {
   const st = contextState(S.config);
@@ -64,9 +62,8 @@ export function contextPage(root) {
       el("p", { class: "hint", text: "Save, then restart OpenCode: a plugin is loaded or dropped only when OpenCode starts. Worth knowing when you choose: the plugin pays off in long sessions on expensive models, where it keeps the window small; in short jobs and on models with very cheap cached input it changes little." }),
     ),
   );
-  const agents = workerAgents();
-  if (st.magic && agents.length) {
-    const all = agents.every((n) => skipsMagic(S.config.agents[n]));
+  if (st.magic) {
+    const out = S.workers.magicContextInJobs !== true; // the bridge's default: jobs run without the plugin
     root.append(
       el(
         "section",
@@ -78,20 +75,24 @@ export function contextPage(root) {
             "div",
             {},
             el("h3", { text: "Keep it out of Claude's workers" }),
-            el("p", { class: "hint", text: `Jobs that Claude hands to a worker are short and start fresh, so the plugin's guidance is dead weight there. This adds the plugin's own opt-out line to the instructions of the agents your workers run: ${agents.join(", ")}.` }),
+            el("p", {
+              class: "hint",
+              text: "Jobs that Claude hands to an OpenCode worker are short and start fresh, so the plugin only gets in the way there: it trims the job's context and runs its own summaries. When this is on, the bridge runs every OpenCode job on a private server with a copy of this config that leaves the plugin out and turns OpenCode's own compaction on. It covers every worker and agent, including ones added later. Your own OpenCode sessions keep the plugin.",
+            }),
           ),
           el(
             "label",
             { class: "inline-toggle" },
-            toggle(all, (on) => {
-              for (const n of agents) setSkipMagic(S.config.agents[n], on);
+            toggle(out, (on) => {
+              if (on) delete S.workers.magicContextInJobs;
+              else S.workers.magicContextInJobs = true;
               mark();
               render();
             }, "Keep Magic Context out of Claude's workers"),
-            all ? "On" : "Off",
+            out ? "On" : "Off",
           ),
         ),
-        el("p", { class: "hint" }, "The line is ", el("code", { text: MAGIC_SKIP }), ". It stops the plugin's guidance, project notes and profile from being added to those agents' prompts; your own OpenCode sessions keep them. Save, then Reload OpenCode."),
+        el("p", { class: "hint", text: "Saved in the bridge's workers file; the next job follows it, with no restart." }),
       ),
     );
   }

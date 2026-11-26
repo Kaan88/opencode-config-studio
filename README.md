@@ -32,7 +32,8 @@ OpenCode itself uses. **Claude bridge** (Workers, Bridge) is what Claude Code ca
     already runs on start unticked. Pick a mode for all of them and edit any name before importing.
 - **Context.** One switch for what keeps a long session inside the model's window: the Magic Context plugin on and
   OpenCode's own compaction off, or the reverse (the two interfere when both run). A second switch keeps the plugin
-  out of the agents that Claude's workers run, by adding the plugin's own opt-out line to their instructions.
+  out of Claude's workers: the bridge then runs every OpenCode job on a private server with a copy of the config
+  that leaves the plugin out (`magicContextInJobs` in the bridge's workers file; on unless set to `true`).
 - **Advanced.** Every other setting through a form generated from OpenCode's schema, and the raw JSON.
 - **Workers.** The one list of what Claude may run through the bridge, saved to `~/.config/opencode-bridge/workers.json`.
   A worker runs an OpenCode agent (optionally on another model) or Claude Code itself (model, effort, instructions);
