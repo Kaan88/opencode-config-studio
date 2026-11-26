@@ -77,7 +77,7 @@ export function contextPage(root) {
             el("h3", { text: "Keep it out of Claude's workers" }),
             el("p", {
               class: "hint",
-              text: "Jobs that Claude hands to an OpenCode worker are short and start fresh, so the plugin only gets in the way there: it trims the job's context and runs its own summaries. When this is on, the bridge runs every OpenCode job on a private server with a copy of this config that leaves the plugin out and turns OpenCode's own compaction on. It covers every worker and agent, including ones added later. Your own OpenCode sessions keep the plugin.",
+               text: "Workers share a separate OpenCode service with the plugin left out and OpenCode's compaction on. Sign in to their providers on the Workers page. Turn this off to use your own OpenCode service and sign-ins instead.",
             }),
           ),
           el(

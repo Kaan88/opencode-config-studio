@@ -4,6 +4,7 @@ import { STARTER_WORKERS, WORKER_EFFORTS, WORKER_MODELS, WORKER_NAME, WORKER_RUN
 import { button, confirmDialog, dialog, el, field, notice, select, textInput, toggle } from "../dom.js";
 import { modelPicker } from "../pickers.js";
 import { mark, render, S } from "../state.js";
+import { workerSignIn } from "./workerSignIn.js";
 
 const BUILT_IN = ["build", "plan", "general", "explore"];
 const EDITS = [
@@ -37,6 +38,7 @@ export function workersPage(root) {
       button("+ New worker", newWorkerDialog, "primary"),
     ),
   );
+  root.append(workerSignIn());
   if (S.workersImported && entries.length)
     root.append(
       el(

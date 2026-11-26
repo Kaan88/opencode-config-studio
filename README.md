@@ -32,7 +32,7 @@ OpenCode itself uses. **Claude bridge** (Workers, Bridge) is what Claude Code ca
     already runs on start unticked. Pick a mode for all of them and edit any name before importing.
 - **Context.** One switch for what keeps a long session inside the model's window: the Magic Context plugin on and
   OpenCode's own compaction off, or the reverse (the two interfere when both run). A second switch keeps the plugin
-  out of Claude's workers: the bridge then runs every OpenCode job on a private server with a copy of the config
+  out of Claude's workers: bridge 3.4.0 runs OpenCode jobs on a shared worker service with a copy of the config
   that leaves the plugin out (`magicContextInJobs` in the bridge's workers file; on unless set to `true`).
 - **Advanced.** Every other setting through a form generated from OpenCode's schema, and the raw JSON.
 - **Workers.** The one list of what Claude may run through the bridge, saved to `~/.config/opencode-bridge/workers.json`.
@@ -40,7 +40,11 @@ OpenCode itself uses. **Claude bridge** (Workers, Bridge) is what Claude Code ca
   each has a description Claude reads, can be read-only, and one is the default. Claude sees these names and nothing
   else of OpenCode. Each agent card on the Agents page says whether it is offered to Claude, with an **Offer to Claude**
   button. The first time, the list is made from the default agent and the older `~/.claude/claude-workers.json`.
-  Claude sessions pick up changes within seconds.
+  Claude sessions pick up changes within seconds. **Worker sign-ins** shows the providers those saved workers use.
+  Workers sign in separately from your own OpenCode. Use **Enter API key** for DeepSeek or **Sign in** for OpenAI,
+  finish the native terminal/browser flow, then **Check sign-ins**. **Sign out** opens OpenCode's account picker.
+  Worker key entry goes over a private stdin pipe to the bridge helper and on to the worker service; it isn't
+  saved in the Studio config or its backups. Status uses OpenCode's integration metadata, never its secret export.
 - **Bridge.** What does what, whether the bridge is installed, its version and the latest one, where it is registered
   (Claude Code, Claude Desktop), and a button that opens a terminal running the bridge's own setup script to install or
   update it.
@@ -62,6 +66,8 @@ OpenCode itself uses. **Claude bridge** (Workers, Bridge) is what Claude Code ca
 |---|---|
 | `OPENCODE_GUI_CONFIG` | edit another JSON/JSONC file |
 | `OPENCODE_EXE` | full path to `opencode.exe` if it isn't found |
+| `BRIDGE_JOB_HOME` | parent of the bridge's worker service contract (`~/.config/opencode-bridge/job-service.json` by default) |
+| `STUDIO_WORKER_AUTH_HELPER` | optional absolute path to a staged `bridge-auth.mjs` for signing in before a bridge upgrade; normally Studio uses the registered installation |
 
 ## Build
 

@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+mod worker_auth;
 
 const BUNDLED_SCHEMA: &str = include_str!("../../src/schema.json");
 const BUNDLED_MODEL_SCHEMA: &str = include_str!("../../src/model-schema.json");
@@ -441,6 +442,9 @@ fn registered_server(file: &Path) -> Option<PathBuf> {
 
 // serverInfo: { name: "opencode-agent", version: "3.0.0" } in the bridge's server.mjs
 fn server_version(text: &str) -> Option<String> {
+    if let Some((_, version)) = text.split_once("const VERSION = \"") {
+        return Some(version.split_once('"')?.0.to_string());
+    }
     let rest = &text[text.find("serverInfo:")?..];
     let from = rest.find("version: \"")? + 10;
     let len = rest[from..].find('"')?;
@@ -533,6 +537,9 @@ fn main() {
             schema_cache_save,
             open_url,
             bridge_status,
+            worker_auth::worker_auth_status,
+            worker_auth::worker_auth_key,
+            worker_auth::worker_auth_terminal,
             bridge_install
         ])
         .run(tauri::generate_context!())
