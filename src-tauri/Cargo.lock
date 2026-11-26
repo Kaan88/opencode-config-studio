@@ -2471,9 +2471,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "opencode-config-studio"
-version = "3.1.0"
+name = "opencode-cli"
+version = "0.1.0"
+source = "git+https://github.com/Kaan88/claude-switch.git?rev=9a08478effc9ecfb38abd1b4b1ef6a6d5a1f49df#9a08478effc9ecfb38abd1b4b1ef6a6d5a1f49df"
 dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "opencode-config-studio"
+version = "3.1.1"
+dependencies = [
+ "opencode-cli",
  "serde",
  "serde_json",
  "sha2 0.10.9",

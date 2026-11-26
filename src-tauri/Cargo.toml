@@ -1,6 +1,6 @@
 [package]
 name = "opencode-config-studio"
-version = "3.1.0"
+version = "3.1.1"
 description = "Desktop editor for OpenCode's opencode.json"
 edition = "2021"
 
@@ -8,6 +8,7 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+opencode-cli = { git = "https://github.com/Kaan88/claude-switch.git", rev = "9a08478effc9ecfb38abd1b4b1ef6a6d5a1f49df" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

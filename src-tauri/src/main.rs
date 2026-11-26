@@ -174,68 +174,75 @@ fn config_write(text: String, revision_seen: String, file: Option<String>) -> Re
     result
 }
 
-// The npm shim (opencode.cmd) is not an executable: find the real binary, wherever npm or Scoop put it.
-fn find_opencode() -> Option<PathBuf> {
+fn studio_opencode_program() -> Option<PathBuf> {
+    // Keep explicit overrides even if invalid: Studio reports their launch error, not "not found".
     if let Some(p) = std::env::var_os("OPENCODE_EXE") {
         return Some(PathBuf::from(p));
     }
+    let path = std::env::var_os("PATH");
+    let dirs: Vec<_> = path.iter().flat_map(std::env::split_paths).collect();
+    let appdata = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default();
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_default();
+    let h = home();
+    let shared_home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    if legacy_search_needed(&dirs, &h, shared_home.as_deref(), &appdata, &local) {
+        legacy_opencode_search(&dirs, &h, &appdata, &local, Path::is_file)
+    } else {
+        opencode_cli::find_program()
+    }
+}
+
+fn legacy_search_needed(dirs: &[PathBuf], home: &Path, shared_home: Option<&Path>, appdata: &Path, local: &Path) -> bool {
+    shared_home != Some(home)
+        || [home, appdata, local].into_iter().chain(dirs.iter().map(PathBuf::as_path)).any(|p| !p.is_absolute())
+}
+
+// The shared finder excludes relative paths and uses a platform-specific home variable.
+// Keep Studio's original search order when relative candidates or a different home are possible.
+fn legacy_opencode_search(
+    dirs: &[PathBuf],
+    home: &Path,
+    appdata: &Path,
+    local: &Path,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
     let exe = if cfg!(windows) { "opencode.exe" } else { "opencode" };
     let real = |dir: &Path| dir.join("node_modules").join("@opencode").join("cli").join("bin").join(exe);
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            if real(&dir).is_file() {
-                return Some(real(&dir));
-            }
-            if dir.join(exe).is_file() {
-                return Some(dir.join(exe));
-            }
-        }
-    }
-    let env = |k: &str| std::env::var_os(k).map(PathBuf::from).unwrap_or_default();
-    let h = home();
-    [
-        real(&h.join("scoop").join("apps").join("nodejs").join("current").join("bin")),
-        real(&h.join("scoop").join("persist").join("nodejs").join("bin")),
-        real(&env("APPDATA").join("npm")),
-        env("LOCALAPPDATA").join("Programs").join("opencode").join(exe),
-        h.join(".opencode").join("bin").join(exe),
-        h.join(".local").join("bin").join(exe),
-    ]
-    .into_iter()
-    .find(|p| p.is_file())
+    dirs.iter()
+        .flat_map(|dir| [real(dir), dir.join(exe)])
+        .chain([
+            real(&home.join("scoop/apps/nodejs/current/bin")),
+            real(&home.join("scoop/persist/nodejs/bin")),
+            real(&appdata.join("npm")),
+            local.join("Programs/opencode").join(exe),
+            home.join(".opencode/bin").join(exe),
+            home.join(".local/bin").join(exe),
+        ])
+        .find(|p| is_file(p))
 }
 
-// Runs opencode with fixed arguments (no window), up to 20 s; stdout on success.
-fn run_opencode(args: &'static [&'static str]) -> Result<String, String> {
-    run_opencode_for(args, 20)
+fn studio_opencode(args: &'static [&'static str], secs: u64) -> Result<String, String> {
+    let exe = studio_opencode_program().ok_or("OpenCode executable not found. Set OPENCODE_EXE to its full path.")?;
+    // Studio's deadline stops waiting but does not terminate the CLI (which may be reloading or restarting).
+    wait_for_opencode(args, secs, move || opencode_cli::run(Command::new(exe), args, Duration::MAX))
 }
 
-// The same with a limit of its own: stopping and starting the service takes longer than a request.
-fn run_opencode_for(args: &'static [&'static str], secs: u64) -> Result<String, String> {
-    let exe = find_opencode().ok_or("OpenCode executable not found. Set OPENCODE_EXE to its full path.")?;
+fn wait_for_opencode(
+    args: &[&str],
+    secs: u64,
+    work: impl FnOnce() -> Result<String, String> + Send + 'static,
+) -> Result<String, String> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut cmd = Command::new(&exe);
-        cmd.args(args);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        let _ = tx.send(cmd.output());
+        let _ = tx.send(work());
     });
-    let what = args.join(" ");
-    match rx.recv_timeout(Duration::from_secs(secs)) {
-        Ok(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
-        Ok(Ok(out)) => Err(format!("opencode {what} failed: {}", String::from_utf8_lossy(&out.stderr).trim())),
-        Ok(Err(e)) => Err(format!("Could not run OpenCode: {e}")),
-        Err(_) => Err(format!("opencode {what} did not finish within {secs} s.")),
-    }
+    rx.recv_timeout(Duration::from_secs(secs))
+        .unwrap_or_else(|_| Err(format!("opencode {} did not finish within {secs} s.", args.join(" "))))
 }
 
 #[tauri::command]
 async fn opencode_reload() -> Result<String, String> {
-    let text = tauri::async_runtime::spawn_blocking(|| run_opencode(&["reload"])).await.map_err(|e| e.to_string())??;
+    let text = tauri::async_runtime::spawn_blocking(|| studio_opencode(&["reload"], 20)).await.map_err(|e| e.to_string())??;
     Ok(if text.is_empty() { "Configuration reloaded".into() } else { text })
 }
 
@@ -243,7 +250,8 @@ async fn opencode_reload() -> Result<String, String> {
 // `None` when the service does not answer (it is down or failed to start), which a restart is the cure for.
 #[tauri::command]
 async fn opencode_active() -> Result<Option<usize>, String> {
-    let out = tauri::async_runtime::spawn_blocking(|| run_opencode(&["api", "session.active"])).await.map_err(|e| e.to_string())?;
+    // The crate's active_sessions only counts entries of type "running"; Studio warns for every entry.
+    let out = tauri::async_runtime::spawn_blocking(|| studio_opencode(&["api", "session.active"], 20)).await.map_err(|e| e.to_string())?;
     Ok(out.ok().and_then(|text| active_count(&text)))
 }
 
@@ -256,23 +264,25 @@ fn active_count(text: &str) -> Option<usize> {
 // servers, providers, a service that failed at boot). If the restart itself fails, stop and start apart.
 #[tauri::command]
 async fn opencode_restart() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        if run_opencode_for(&["service", "restart"], 60).is_err() {
-            let _ = run_opencode_for(&["service", "stop"], 30);
-            run_opencode_for(&["service", "start"], 60)?;
-        }
-        // the first request proves it answers
-        run_opencode_for(&["api", "session.active"], 60).map_err(|e| format!("OpenCode restarted but does not answer: {e}"))?;
-        Ok::<_, String>("OpenCode restarted".to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(|| restart_with(studio_opencode))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn restart_with(mut run: impl FnMut(&'static [&'static str], u64) -> Result<String, String>) -> Result<String, String> {
+    if run(&["service", "restart"], 60).is_err() {
+        let _ = run(&["service", "stop"], 30);
+        run(&["service", "start"], 60)?;
+    }
+    // Unlike the crate's restart_service, Studio treats any successful exit as an answer.
+    run(&["api", "session.active"], 60).map_err(|e| format!("OpenCode restarted but does not answer: {e}"))?;
+    Ok("OpenCode restarted".into())
 }
 
 // Every model OpenCode knows (cloud and local) with its effort variants: feeds the model pickers.
 #[tauri::command]
 async fn opencode_models() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(|| run_opencode(&["api", "model.list"])).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(|| studio_opencode(&["api", "model.list"], 20)).await.map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize)]
@@ -475,7 +485,7 @@ async fn bridge_status() -> Result<BridgeStatus, String> {
             claude_desktop: desktop.is_some(),
             node: on_path("node"),
             claude: on_path("claude") || home().join(".local").join("bin").join(claude_exe).is_file(),
-            opencode: find_opencode().is_some(),
+            opencode: studio_opencode_program().is_some(),
             command: bridge_setup_command(),
         }
     })
@@ -530,14 +540,93 @@ fn main() {
 }
 
 #[cfg(test)]
-mod restart_tests {
-    use super::active_count;
+mod opencode_tests {
+    use super::{active_count, legacy_opencode_search, legacy_search_needed, restart_with, wait_for_opencode};
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     #[test]
     fn the_active_sessions_are_counted_and_anything_else_is_unknown() {
         assert_eq!(active_count(r#"{"data":{}}"#), Some(0));
-        assert_eq!(active_count(r#"{"data":{"ses_a":{"type":"running"},"ses_b":{"type":"running"}}}"#), Some(2));
+        assert_eq!(active_count(r#"{"data":{"ses_a":{"type":"running"},"ses_b":{"type":"waiting"}}}"#), Some(2));
         assert_eq!(active_count("Error: Background service failed to start"), None);
         assert_eq!(active_count(r#"{"data":[]}"#), None);
+    }
+
+    #[test]
+    fn restart_accepts_a_non_json_answer_and_only_falls_back_if_restart_fails() {
+        let mut calls = Vec::new();
+        let result = restart_with(|args, secs| {
+            calls.push((args.join(" "), secs));
+            Ok("not JSON".into())
+        });
+        assert_eq!(result, Ok("OpenCode restarted".into()));
+        assert_eq!(calls, [("service restart".to_owned(), 60), ("api session.active".to_owned(), 60)]);
+    }
+
+    #[test]
+    fn restart_ignores_stop_errors_and_reports_a_failed_probe() {
+        let mut calls = Vec::new();
+        let result = restart_with(|args, secs| {
+            calls.push((args.join(" "), secs));
+            match args {
+                ["service", "start"] => Ok(String::new()),
+                ["api", "session.active"] => Err("probe failed".into()),
+                _ => Err("service command failed".into()),
+            }
+        });
+        assert_eq!(result, Err("OpenCode restarted but does not answer: probe failed".into()));
+        assert_eq!(calls, [
+            ("service restart".to_owned(), 60), ("service stop".to_owned(), 30),
+            ("service start".to_owned(), 60), ("api session.active".to_owned(), 60),
+        ]);
+    }
+
+    #[test]
+    fn failed_start_is_reported_without_probing() {
+        let result = restart_with(|args, _| match args {
+            ["service", "start"] => Err("start failed".into()),
+            ["service", "restart" | "stop"] => Err("restart or stop failed".into()),
+            _ => panic!("must not probe after a failed start"),
+        });
+        assert_eq!(result, Err("start failed".into()));
+    }
+
+    #[test]
+    fn timeout_keeps_studios_message_and_lets_work_finish() {
+        let (release, blocked) = mpsc::channel();
+        let (done, finished) = mpsc::channel();
+        assert_eq!(
+            wait_for_opencode(&["api", "model.list"], 0, move || {
+                blocked.recv().unwrap();
+                done.send(()).unwrap();
+                Ok(String::new())
+            }),
+            Err("opencode api model.list did not finish within 0 s.".into()),
+        );
+        release.send(()).unwrap();
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            wait_for_opencode(&["reload"], 20, || Err("Could not run OpenCode: test".into())),
+            Err("Could not run OpenCode: test".into()),
+        );
+    }
+
+    #[test]
+    fn an_earlier_relative_path_keeps_precedence_over_an_absolute_executable() {
+        let absolute = Path::new(if cfg!(windows) { r"C:\studio-fixture" } else { "/studio-fixture" });
+        let dirs = [PathBuf::from("relative"), absolute.to_path_buf()];
+        let exe = if cfg!(windows) { "opencode.exe" } else { "opencode" };
+        let relative_exe = dirs[0].join(exe);
+        let absolute_exe = dirs[1].join(exe);
+        assert!(legacy_search_needed(&dirs, absolute, Some(absolute), absolute, absolute));
+        assert!(!legacy_search_needed(&dirs[1..], absolute, Some(absolute), absolute, absolute));
+        assert!(legacy_search_needed(&dirs[1..], absolute, None, absolute, absolute));
+        assert!(legacy_search_needed(&dirs[1..], absolute, Some(absolute), absolute, Path::new("")));
+        assert_eq!(
+            legacy_opencode_search(&dirs, absolute, absolute, absolute, |p| p == relative_exe || p == absolute_exe),
+            Some(relative_exe),
+        );
     }
 }
