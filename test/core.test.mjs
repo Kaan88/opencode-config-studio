@@ -93,3 +93,11 @@ test("import candidates: no free models, newest version per line, local kept, na
   const cfg = { agents: Object.fromEntries(c.map((x) => [x.name, { model: x.ref, mode: "all", description: `Runs ${x.label}` }])) };
   check(cfg);
 });
+
+test("the restart dialog says how many sessions it interrupts, or that the service is silent", async () => {
+  const { restartWarning } = await import("../src/core.js");
+  assert.match(restartWarning(null), /not answering/);
+  assert.match(restartWarning(0), /No session is working/);
+  assert.match(restartWarning(1), /^1 session is working/);
+  assert.match(restartWarning(7), /^7 sessions are working/);
+});

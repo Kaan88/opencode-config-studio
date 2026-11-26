@@ -1,5 +1,6 @@
 // App shell: navigation, the save bar, keyboard shortcuts, the close prompt, and start-up.
 import { $, act, button, confirmDialog, el, notice } from "./dom.js";
+import { restartWarning } from "./core.js";
 import { advancedPage } from "./pages/advanced.js";
 import { agentsPage } from "./pages/agents.js";
 import { bridgePage } from "./pages/bridge.js";
@@ -71,6 +72,19 @@ const reload = () => act(async () => {
   notice(await invoke("opencode_reload"), "ok");
   loadCatalog().then(render);
 });
+// A reload re-reads the file; a restart is a new service: plugins, MCP servers and providers start again,
+// and a service that failed at boot is replaced. Sessions that are working are interrupted, so it asks.
+const restart = () => act(async () => {
+  if (S.dirty) throw Error("Save your changes first, then restart OpenCode.");
+  const active = await invoke("opencode_active");
+  confirmDialog("Restart OpenCode?", restartWarning(active), "Restart", () => act(async () => {
+    notice("Restarting OpenCode…");
+    notice(await invoke("opencode_restart"), "ok");
+    await loadCatalog();
+    render();
+    if (S.catalogError) notice(`OpenCode restarted, but its model list still fails (${S.catalogError}).`, "error");
+  }));
+});
 const discard = () => confirmDialog("Discard your changes?", "This reloads the file from disk.", "Discard", () => act(async () => {
   await loadFile();
   render();
@@ -80,6 +94,7 @@ const discard = () => confirmDialog("Discard your changes?", "This reloads the f
 $("#save").onclick = save;
 $("#discard").onclick = discard;
 $("#reload").onclick = reload;
+$("#restart").onclick = restart;
 $("#docs").onclick = (e) => {
   e.preventDefault();
   act(() => invoke("open_url", { url: e.currentTarget.href }));
@@ -103,5 +118,6 @@ act(async () => {
   notice("Loading…");
   await Promise.all([loadSchema(), loadFile(), loadCatalog()]);
   render();
-  notice(S.catalogError ? `Couldn't read OpenCode's model list (${S.catalogError}); model pickers show only this file's models.` : "", S.catalogError ? "error" : "info");
+  if (S.catalogError) notice(el("span", {}, `Couldn't read OpenCode's model list (${S.catalogError}); model pickers show only this file's models. `, button("Restart OpenCode", restart, "linkish")), "error");
+  else notice("", "info");
 });

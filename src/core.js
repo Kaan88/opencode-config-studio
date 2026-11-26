@@ -424,3 +424,11 @@ export function setSkipMagic(agent, on) {
   else delete agent.system;
   return agent;
 }
+
+// What the Restart dialog says: how many sessions a restart interrupts, or that the service is not answering.
+export const restartWarning = (active) =>
+  active === null || active === undefined
+    ? "The OpenCode service is not answering. Restarting starts a fresh one."
+    : active === 0
+      ? "No session is working right now. The service stops and starts again; plugins, MCP servers and providers are started anew."
+      : `${active} session${active === 1 ? " is" : "s are"} working right now and will be interrupted. Jobs started through the bridge are picked up again afterwards; anything else has to be continued by hand.`;

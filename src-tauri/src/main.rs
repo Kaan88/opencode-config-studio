@@ -207,6 +207,11 @@ fn find_opencode() -> Option<PathBuf> {
 
 // Runs opencode with fixed arguments (no window), up to 20 s; stdout on success.
 fn run_opencode(args: &'static [&'static str]) -> Result<String, String> {
+    run_opencode_for(args, 20)
+}
+
+// The same with a limit of its own: stopping and starting the service takes longer than a request.
+fn run_opencode_for(args: &'static [&'static str], secs: u64) -> Result<String, String> {
     let exe = find_opencode().ok_or("OpenCode executable not found. Set OPENCODE_EXE to its full path.")?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -220,11 +225,11 @@ fn run_opencode(args: &'static [&'static str]) -> Result<String, String> {
         let _ = tx.send(cmd.output());
     });
     let what = args.join(" ");
-    match rx.recv_timeout(Duration::from_secs(20)) {
+    match rx.recv_timeout(Duration::from_secs(secs)) {
         Ok(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
         Ok(Ok(out)) => Err(format!("opencode {what} failed: {}", String::from_utf8_lossy(&out.stderr).trim())),
         Ok(Err(e)) => Err(format!("Could not run OpenCode: {e}")),
-        Err(_) => Err(format!("opencode {what} did not finish within 20 s.")),
+        Err(_) => Err(format!("opencode {what} did not finish within {secs} s.")),
     }
 }
 
@@ -232,6 +237,36 @@ fn run_opencode(args: &'static [&'static str]) -> Result<String, String> {
 async fn opencode_reload() -> Result<String, String> {
     let text = tauri::async_runtime::spawn_blocking(|| run_opencode(&["reload"])).await.map_err(|e| e.to_string())??;
     Ok(if text.is_empty() { "Configuration reloaded".into() } else { text })
+}
+
+// How many OpenCode sessions are working right now: a restart interrupts them, so the window asks first.
+// `None` when the service does not answer (it is down or failed to start), which a restart is the cure for.
+#[tauri::command]
+async fn opencode_active() -> Result<Option<usize>, String> {
+    let out = tauri::async_runtime::spawn_blocking(|| run_opencode(&["api", "session.active"])).await.map_err(|e| e.to_string())?;
+    Ok(out.ok().and_then(|text| active_count(&text)))
+}
+
+fn active_count(text: &str) -> Option<usize> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    Some(v.get("data")?.as_object()?.len())
+}
+
+// Stops the background service and starts a fresh one: for what a reload does not reach (plugins, MCP
+// servers, providers, a service that failed at boot). If the restart itself fails, stop and start apart.
+#[tauri::command]
+async fn opencode_restart() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        if run_opencode_for(&["service", "restart"], 60).is_err() {
+            let _ = run_opencode_for(&["service", "stop"], 30);
+            run_opencode_for(&["service", "start"], 60)?;
+        }
+        // the first request proves it answers
+        run_opencode_for(&["api", "session.active"], 60).map_err(|e| format!("OpenCode restarted but does not answer: {e}"))?;
+        Ok::<_, String>("OpenCode restarted".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // Every model OpenCode knows (cloud and local) with its effort variants: feeds the model pickers.
@@ -480,6 +515,8 @@ fn main() {
             config_read,
             config_write,
             opencode_reload,
+            opencode_active,
+            opencode_restart,
             opencode_models,
             http_get,
             schema_candidates,
@@ -490,4 +527,17 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenCode Config Studio");
+}
+
+#[cfg(test)]
+mod restart_tests {
+    use super::active_count;
+
+    #[test]
+    fn the_active_sessions_are_counted_and_anything_else_is_unknown() {
+        assert_eq!(active_count(r#"{"data":{}}"#), Some(0));
+        assert_eq!(active_count(r#"{"data":{"ses_a":{"type":"running"},"ses_b":{"type":"running"}}}"#), Some(2));
+        assert_eq!(active_count("Error: Background service failed to start"), None);
+        assert_eq!(active_count(r#"{"data":[]}"#), None);
+    }
 }
